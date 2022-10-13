@@ -53,8 +53,6 @@ Table of contents
 
 ## Introduction
 
-TODO
-
 The index structure definition begins at [`AddressAppearanceIndex`](#addressappearanceindex).
 
 ## Scope
@@ -118,7 +116,9 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 
 ### Snappy
 
-[Snappy, a fast compressor/decompressor.](https://github.com/google/snappy)
+[Consensus spec: SSZ-snappy encoding strategy](https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md#ssz-snappy-encoding-strategy)
+
+[Google: Snappy, a fast compressor/decompressor.](https://github.com/google/snappy)
 
 ## Constants
 
