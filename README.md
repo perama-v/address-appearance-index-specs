@@ -22,7 +22,8 @@ Table of contents
     - [Snappy](#snappy)
   - [Constants](#constants)
     - [Design parameters](#design-parameters)
-    - [List lengths](#list-lengths)
+    - [Fixed-size type parameters](#fixed-size-type-parameters)
+    - [Variable-size type parameters](#variable-size-type-parameters)
     - [Derived](#derived)
   - [Containers](#containers)
     - [Core (required to use the index)](#core-required-to-use-the-index)
@@ -33,9 +34,14 @@ Table of contents
     - [Informative (not required to use the index)](#informative-not-required-to-use-the-index)
       - [`AddressDivision`](#addressdivision)
       - [`AddressAppearanceIndex`](#addressappearanceindex)
+      - [`ManifestSubsetHash`](#manifestsubsethash)
+      - [`ManifestDivision`](#manifestdivision)
+      - [`IndexManifest`](#indexmanifest)
   - [Definitions and aliases](#definitions-and-aliases)
   - [Overview of the address-appearance-index](#overview-of-the-address-appearance-index)
     - [Service provided by the index](#service-provided-by-the-index)
+      - [Agent type: Maintainer](#agent-type-maintainer)
+      - [Agent type: User](#agent-type-user)
     - [Service assumed from the data layer](#service-assumed-from-the-data-layer)
     - [Service assumed from the network layer](#service-assumed-from-the-network-layer)
     - [Functions of the index](#functions-of-the-index)
@@ -131,9 +137,16 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | `ADDRESS_CHARS_SIMILARITY_DEPTH` | `uint32(2)` | A parameter for the number of identical characters that two similar addresses share in hexadecimal representation. If the value is `2`, address`0xa350...9c45` will be evaluated for similarity using the characters `0xa3`. |
 | `BLOCK_RANGE_WIDTH` | `uint32(10*5)` (=100_000) | Number of blocks in a address index subset. Index maintenance operates at this cadence (~2 weeks) |
 
-### List lengths
+### Fixed-size type parameters
 
-Helper values for SSZ operations.
+
+| Name | Value | Description |
+| - | - | - |
+| `BYTES_PER_ADDRESS` | `uint32(20)` | Number of bytes for an address (E.g., `20` bytes on mainnet). May be different on some networks. |
+
+### Variable-size type parameters
+
+Helper values for SSZ operations. SSZ variable-size elements require a maximum length field.
 
 | Name | Value | Description |
 | - | - | - |
@@ -161,7 +174,7 @@ Use of the index requires implementation of these containers.
 
 A single transaction identifier (block number and index within block).
 Transactions are an AppearanceTx for an address when, at some point during execution, the
-address appears in the EVM trace.
+address appears in the transaction execution trace.
 
 ```python
 class AppearanceTx(Container):
@@ -176,7 +189,7 @@ within the range defined in the parent AddressIndexSubset.
 
 ```python
 class AddressAppearances(Container):
-    address: Bytes20
+    address: Vector[byte, BYTES_PER_ADDRESS]
     appearances: List(AppearanceTx, MAX_TXS_PER_BLOCK_RANGE)
 ```
 
@@ -220,9 +233,9 @@ Use of the index requires implementation of these containers.
 #### `AddressDivision`
 
 This is the functional unit that a user acquires from a peer.
-A collection of similar addresses. Named using a division identifier (e.g., `0x5a`). See
-[`AddressDivision`](#addressdivision). Contains serialized and
-compressed units, one per `BLOCK_RANGE` blocks. Total members is calculated by latest block height divided by `BLOCK_RANGE_WIDTH`.
+A collection data for similar addresses. Named using a division identifier (e.g., `5a`).
+Contains serialized and compressed units, one per `BLOCK_RANGE` blocks.
+Total members is calculated by latest block height divided by `BLOCK_RANGE_WIDTH`.
 
 ```python
 class AddressDivision(Container):
@@ -232,9 +245,9 @@ class AddressDivision(Container):
 
 #### `AddressAppearanceIndex`
 
-The entire address-appearance-index, divided into [`AddressDivision`](#addressdivision)'s that
-contain block [`AddressIndexSubset`](#addressindexsubset)'s,
-ultimately containing transaction identifiers as [`AppearanceTx`](#appearancetx)'s.
+The entire address-appearance-index, divided into [`AddressDivision`](#addressdivision)s that
+contain block [`AddressIndexSubset`](#addressindexsubset)s,
+ultimately containing transaction identifiers as [`AppearanceTx`](#appearancetx)s.
 The index is divided into `NUM_DIVISIONS` functional units.
 
 The index is a derivative of the Unchained Index, and contains the same data, reorganised
@@ -242,14 +255,53 @@ for a different purposse.
 
 ```python
 class AddressAppearanceIndex(Container):
-    divisions: List(AddressDivision, NUM_DIVISIONS)
+    divisions: Vector(AddressDivision, NUM_DIVISIONS)
 ```
+
+#### `ManifestSubsetHash`
+
+Used to create the index [manifest](#manifest). This unit represents a store for the hash of a single
+[`AddressIndexSubset`](#addressindexsubset). The hash is the tree root hash,
+as defined in the [ssz spec](#ssz-spec).
+
+```python
+class ManifestSubsetHash(Container):
+    address_prefix: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
+    lowest_block: uint32
+    tree_root_hash: uint256
+```
+
+#### `ManifestDivision`
+
+Used to create the index [manifest](#manifest). This unit stores the [subset hashes] for a single [`AddressDivision`](#addressdivision) with a given identifier (e.g., `5a`).
+
+```python
+class ManifestDivision(Container):
+  identifier: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
+  subset_hashes: List[ManifestSubsetHash, MAX_RANGES]
+```
+
+#### `IndexManifest`
+
+This is a container that represents a file containing metadata about the index.
+It is a record of the components of a specific instantiation of the index.
+The manifest keeps the hash of all [`AddressIndexSubset`](#addressindexsubset)s.
+It is updated as the chain progresses.
+
+
+```python
+class IndexManifest(Containr):
+    spec_version: uint32
+    manifest_version: uint32
+    division_hashes: Vector(ManifestDivision)
+```
+
 ## Definitions and aliases
 
 The following terms may be used in subsequent descriptions.
 
-*Address*: A 20 byte identifier used for wallets and accounts in Ethereum. Usually represented
-in hexadecimal representation.
+*Address*: An identifier used for wallets and accounts in Ethereum. Is a byte vector
+of length `BYTES_PER_ADDRESS`. Usually displayed in hexadecimal representation.
 
 *Division*: See [`AddressDivision`](#addressdivision).
 
@@ -268,8 +320,38 @@ E.g., subset `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive
 ## Overview of the address-appearance-index
 
 ### Service provided by the index
+
+A mapping of addresses to appearances.
+
+There are two types of agents that are defined below for separation of subsequent
+procedure descriptions.
+
+#### Agent type: Maintainer
+
+A entity that has the ability to create or distribute the full index.
+
+#### Agent type: User
+
+A entity a part of the index.
+
 ### Service assumed from the data layer
+
+The following are assumed to be available from external systems.
+
+- A complete index of appearances of all address for all transactions in the network.
+  - Unchained Index, either
+    - Obtained from peers (IPFS)
+    - Constructed from local node, using:
+      - A node that can execute all transaction traces.
+      - [trueblocks-core](#trueblocks-core).
+
 ### Service assumed from the network layer
+
+- Providers of the address-appearance-index
+  - Peers in peer-to-peer network
+    - Portal network
+- Users of the address-appearance-index
+
 ### Functions of the index
 
 ## Index architecture
@@ -355,22 +437,66 @@ print(estimate_file_count(15_400_000))
 ```
 ### Manifest
 
+The manifest is a file that serves as a reference for users to maintain up to date data. It
+contains the [index manifest](#indexmanifest) data encoded with
+[SSZ](#ssz-spec) serialization followed by encoding with [snappy](#snappy). It contains:
+
+- Specification version
+- Manifest version
+- Lists of files and their hashes.
+
+The manifest is produced by maintenance [creation](#maintenance-creation) and [extension](#maintenance-extension) procedures and utilised during user
+[completeness audits](#user-completeness-audit). This enables a user to efficiently determine
+the the nature of any pieces of the index that they require from a third party.
 
 ## Procedures
 
+Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
+[user](#agent-type-user)) in relation to the index.
+
+"Maintenance" procedures are performed by [maintainer](#agent-type-maintainer) agent types.
+"User" procedures are performed by [user](#agent-type-maintainer) agent types.
+
 ### Maintenance: Creation
 
-- Index
-- Manifest
+- Index: for each appearance, store under the relevant division -> subset -> address.
+- Manifest: Save specification version and decide manifest version then for each subset file, hash and append to file.
 
 ### Maintenance: Extension
 
-- Index
-- Manifest
+- Index: for each new appearance, store under the relevant division -> subset -> address.
+- Manifest: Save specification version and increment manifest version then for each subset file, hash and append to file.
 
 ### Maintenance: Correctness audit
+
+- For a selected appearance(s), check that the transaction appears in the reference ground truth
+(E.g., Unchained Index or tracing node).
+
 ### User: Consumption
+
+- For a given address go through each subset file and look up the trasaction information for each appearance. Use transaction information to request transaction data from other services
+(portal network peer)
+
 ### User: Completeness audit
 
+- Obtain a manifest from a peer. For each subset file, compute the root tree hash and verify
+it matches the record in the manifest. Check that there are no missing subset files for the
+given division.
+
 ## Design principles
+
+Local first: Users posess the data that is important to them locally.
+
+User first: Data is useful for basic address activity introspection.
+
+Privacy first: A user can obtain knowledge of their own address without directly sharing the
+address with a third party. They reveal which wedge of the address pie (e.g., 1/256th) they
+belong in.
+
+Low disk and bandwidth: Useful information can be obtained with <500MB data.
+
+Resilient: The index can be reconstructed if lost.
+
+Multiclient: The index can be used by different projects, wherever information about a particular
+address is required (such as wallets and light-style clients).
 
