@@ -41,6 +41,8 @@ Table of contents
     - [Functions of the index](#functions-of-the-index)
   - [Index architecture](#index-architecture)
     - [Data](#data)
+      - [String naming conventions](#string-naming-conventions)
+      - [Estimated file count](#estimated-file-count)
     - [Manifest](#manifest)
   - [Procedures](#procedures)
     - [Maintenance: Creation](#maintenance-creation)
@@ -145,7 +147,7 @@ Constants derived from [design parameters](#design-parameters.
 
 | Name | Value | Description |
 | - | - | - |
-| `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` | Number of unique hex character combinations possible. Represents how manny pieces the index can be split. |
+| `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how manny pieces the index can be split. |
 
 ## Containers
 
@@ -182,7 +184,7 @@ class AddressAppearances(Container):
 
 An inclusive range of block numbers (heights) used to define which transactions are
 suitable for inclusion in a given container. The `old` block is used as
-the identifier for the parent `AddressIndeSubset`. The `new` block is defined
+the identifier for the parent `AddressIndexSubset`. The `new` block is defined
 as `old` plus `BLOCK_RANGE_WIDTH`.
 
 ```python
@@ -274,11 +276,83 @@ E.g., subset `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive
 
 ### Data
 
-- Address group
-- Block range division
-- Serialization
-- Compression
+- Address group.
+- Block range division.
+- Serialization.
+- Compression.
 
+#### String naming conventions
+
+In the case where files are being stored, the following naming conventions are recommended.
+This makes direct file transfer between peers more robust in some situations. The "{}" braces
+are excluded from the file name. Patterns are provided using regular expressions.
+
+Directory representing [the index](#addressappearanceindex), where:
+- "NETWORK" is the network name. E.g., ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228).
+```sh
+Format: address_appearance_index_{NETWORK}
+
+Regular expression: "/^address_appearance_index_+[a-z]$/"
+
+Example directory: ./address_appearance_index_mainnet/
+```
+
+Directory representing a [division](#addressdivision), where:
+- "DIVISION_DESCRIPTOR" has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+```sh
+Format: division_0x{DIVISION_DESCRIPTOR}
+
+Regular expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
+
+Example directory: ./division_Ox4e/
+```
+
+File representing a [subset](#addressindexsubset), where:
+- "DIVISION_DESCRIPTOR" has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+- "SUBSET_DESCRIPTOR" is padded to 9 decimal characters and divided into groups of 3 characters.
+Block `14_500_000` is shown in the example.
+- "encoding" is one of two choices:
+  - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
+  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by encoding with
+  [snappy](#snappy).
+```sh
+Format: division_0x{DIVISION_DESCRIPTOR}_subset_{SUBSET_DESCRIPTOR}.{encoding}
+
+Regular Expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_subset(_[0-9]{3}){3}.ssz(_snappy)?$/"
+
+Example file: ./division_0x4e_subset_014_500_000.ssz
+Example file: ./division_0x4e_subset_014_500_000.ssz_snappy
+```
+
+Example of a suggested complete index folder structure:
+```sh
+- ./address_appearance_index_mainnet/
+  - ...
+  - /division_Ox4e/
+    - ...
+    - /division_0x4e_subset_014_500_000.ssz_snappy
+    - /division_0x4e_subset_014_600_000.ssz_snappy
+    - ...
+  - /division_Ox4f/
+    - ...
+    - /division_0x4e_subset_014_500_000.ssz_snappy
+    - ...
+  - ...
+```
+#### Estimated file count
+
+The estimated file count for a complete index on a network at a certain block height can
+be calculated as follows:
+```python
+def estimate_file_count(block_height):
+  division_directories = NUM_DIVISIONS
+  subset_files_per_directory = block_height // BLOCK_RANGE_WIDTH
+  file_count = division_directories * subset_files_per_directory
+  return file_count
+
+print(estimate_file_count(15_400_000))
+> 39424
+```
 ### Manifest
 
 
