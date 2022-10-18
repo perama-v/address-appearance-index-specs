@@ -502,20 +502,37 @@ Example file: ./division_0x4e_subset_014_500_000.ssz
 Example file: ./division_0x4e_subset_014_500_000.ssz_snappy
 ```
 
+File representing a [manifest](#indexmanifest), named with component:
+
+- "ENCODING", which may be one of two choices:
+  - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
+  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
+  encoding with [snappy](#snappy). This format is preferred for network transmission.
+
+```sh
+Format: manifest.{ENCODING}
+
+Regular Expression: "/^manifest.ssz(_snappy)?$/"
+
+Example file: ./manifest.ssz
+Example file: ./manifest.ssz_snappy
+```
+
 Example of a suggested complete index folder structure:
 ```sh
 - ./address_appearance_index_mainnet/
-  - ...
-  - /division_Ox4e/
+    - manifest.ssz_snappy
     - ...
-    - /division_0x4e_subset_014_500_000.ssz_snappy
-    - /division_0x4e_subset_014_600_000.ssz_snappy
+    - /division_Ox4e/
+        - ...
+        - /division_0x4e_subset_014_500_000.ssz_snappy
+        - /division_0x4e_subset_014_600_000.ssz_snappy
+        - ...
+    - /division_Ox4f/
+        - ...
+        - /division_0x4e_subset_014_500_000.ssz_snappy
+        - ...
     - ...
-  - /division_Ox4f/
-    - ...
-    - /division_0x4e_subset_014_500_000.ssz_snappy
-    - ...
-  - ...
 ```
 #### Estimated file count
 
