@@ -34,7 +34,7 @@ Table of contents
     - [Informative (not required to use the index)](#informative-not-required-to-use-the-index)
       - [`AddressDivision`](#addressdivision)
       - [`AddressAppearanceIndex`](#addressappearanceindex)
-      - [`ManifestSubsetHash`](#manifestsubsethash)
+      - [`ManifestSubset`](#manifestsubset)
       - [`ManifestDivision`](#manifestdivision)
       - [`IndexManifest`](#indexmanifest)
   - [Definitions and aliases](#definitions-and-aliases)
@@ -143,6 +143,7 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | Name | Value | Description |
 | - | - | - |
 | `BYTES_PER_ADDRESS` | `uint32(20)` | Number of bytes for an address (E.g., `20` bytes on mainnet). May be different on some networks. |
+| `NETWORK_IDENTIFIER_BYTES` | `uint32(2**5)` (=32) | Maximum number of bytes available to represent the ASCII-encoded network identifier. E.g. The string ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228) is 7 bytes. |
 
 ### Variable-size type parameters
 
@@ -156,17 +157,22 @@ Helper values for SSZ operations. SSZ variable-size elements require a maximum l
 
 ### Derived
 
-Constants derived from [design parameters](#design-parameters.
+Constants derived from [design parameters](#design-parameters).
 
 | Name | Value | Description |
 | - | - | - |
-| `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how manny pieces the index can be split. |
+| `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how many pieces the index can be split. |
 
 ## Containers
 
-### Core (required to use the index)
+The ordering of the fields for each container is defined in the code snippets below and is
+important for serialization/deserialization.
 
-The `AddressIndexSubset` is the only data that is subject to SSZ serialization/deserialization.
+### Data (required to use the index data)
+
+The `AddressIndexSubset` is the main container in this section and is
+subject to SSZ serialization/deserialization to create/access the index data.
+
 The remaining containers are components of that container.
 Use of the index requires implementation of these containers.
 
@@ -187,18 +193,23 @@ class AppearanceTx(Container):
 This unit holds transactions for a single address. All transactions are from blocks
 within the range defined in the parent AddressIndexSubset.
 
+The elements in the appearances list are sorted lexicographically first by their block
+(`AppearanceTx.block`) field, and then by their index (`AppearanceTx.index`) field
+(where the address appears twice in a block).
+
 ```python
 class AddressAppearances(Container):
     address: Vector[byte, BYTES_PER_ADDRESS]
-    appearances: List(AppearanceTx, MAX_TXS_PER_BLOCK_RANGE)
+    appearances: List[AppearanceTx, MAX_TXS_PER_BLOCK_RANGE]
 ```
 
 #### `BlockRange`
 
 An inclusive range of block numbers (heights) used to define which transactions are
 suitable for inclusion in a given container. The `old` block is used as
-the identifier for the parent `AddressIndexSubset`. The `new` block is defined
-as `old` plus `BLOCK_RANGE_WIDTH`.
+the identifier for the parent `AddressIndexSubset`. The `BlockRange` represents
+`BLOCK_RANGE_WIDTH` members and as such, the `new` block is defined
+as ` new = old + BLOCK_RANGE_WIDTH - 1`.
 
 ```python
 class BlockRange(Container):
@@ -210,37 +221,146 @@ class BlockRange(Container):
 
 Many of these units form a functional unit for a user.
 It is the unit that is subject to SSZ serialization then compression
-or decompression then deserialization. Identified by `range.old`, with block `0` being the first
-and block `BLOCK_RANGE_WIDTH` being the second.
+or decompression then deserialization.
 
 Contains a collection representing transaction that meet both the address and block
 range requirements.
+
+The elements in the addresses list are sorted lexicographically by their address
+(`AddressAppearances.address`) field
 
 ```python
 class AddressIndexSubset(Container):
     address_prefix: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
     range: BlockRange
-    appearances: List(AddressAppearances, MAX_ADDRESSES_PER_BLOCK_RANGE)
+    addresses: List[AddressAppearances, MAX_ADDRESSES_PER_BLOCK_RANGE]
+```
+
+### Metadata (required to use the index manifest)
+
+The `IndexManifest` is the main container in this section and is
+subject to SSZ serialization/deserialization to create/access the index manifest.
+
+The remaining containers are components of that container.
+Use of the index manifest requires implementation of these containers.
+
+#### `SubsetIdentifier`
+
+Each [subset](#addressindexsubset) has an identifer, defined as `AddressIndexSubset.range.old`
+(the oldest block that the subset data may contain).
+For example, the first subset has the identifier block `0` (it contains data
+for block `0`) and the second subset has identifier `BLOCK_RANGE_WIDTH`.
+
+The identifier is used in the [manifest](#manifest) and in the
+[naming conventions](#string-naming-conventions) for index files.
+
+```python
+class SubsetIdentifier(Conainer):
+    identifier: uint32
+```
+
+#### `ManifestSubset`
+
+Used to create the index [manifest](#manifest). This unit represents a store for the hash of a single
+[`AddressIndexSubset`](#addressindexsubset). The hash is the tree root hash,
+as defined in the [ssz spec](#ssz-spec).
+
+A single subset may be referred to by it's [identifier](#subsetidentifier).
+
+```python
+class ManifestSubset(Container):
+    identifier: SubsetIdentifier
+    tree_root_hash: uint256
+```
+
+### `DivisionIdentifier`
+
+An identifier defines the member addresses for a [division](#addressdivision). Addresses
+all start with the same bytes, E.g., `5a`.
+
+The identifier is also used in [naming conventions](#string-naming-conventions) for
+index directories.
+
+```python
+class DivisionIdentifier(Container):
+    identifier: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
+```
+
+#### `ManifestDivision`
+
+Used to create the index [manifest](#manifest).
+This unit stores the [subset metadata](#manifestsubset) for a single
+[`AddressDivision`](#addressdivision) with a given [identifier](#divisionidentifier).
+
+The elements in the `subset_metadata` list are sorted lexicographically by their
+identifier (`ManifestSubset.identifier`) field.
+
+```python
+class ManifestDivision(Container):
+    identifier: DivisionIdentifier
+    subset_metadata: List[ManifestSubset, MAX_RANGES]
+```
+
+#### `NetworkIdentifier`
+
+Used to identify the network that the index data belongs to. The network
+is represented as an ASCII-encoded byte vector with maximum length `NETWORK_IDENTIFIER_BYTES`.
+
+```python
+class NetworkIdentifier(Container):
+    name: ByteVector[NETWORK_IDENTIFIER_BYTES]
+```
+
+#### `IndexManifest`
+
+This is a container that represents a file containing metadata about the index.
+It is a record of the components of a specific instantiation of the index.
+The manifest keeps the hash of all [`AddressIndexSubset`](#addressindexsubset)s.
+If the index is updated to include newer data as the chain progresses,
+a new manifest is generated to reflect the contents of the index.
+
+The manifest includes:
+- The [specification version](#versioning) declared as three separate `spec_version_major`,
+`spec_version_minor` and `spec_version_patch` integers.
+- The [network](#networkidentifier)
+- The [latest_subset_identifier](#subsetidentifier) of the highest (latest) completed [subset](#addressindexsubset).
+- The [division_metadata](#manifestdivision) which each contain the hashes of the subset.
+  - The elements in the division metadata vector are sorted lexicographically by their
+identifier (`ManifestDivision.identifier`) field.
+
+```python
+class IndexManifest(Containr):
+    spec_version_major: uint32
+    spec_version_minor: uint32
+    spec_version_patch: uint32
+    network: NetworkIdentifier
+    latest_subset_identifier: SubsetIdentifier
+    division_metadata: Vector[ManifestDivision, NUM_DIVISIONS]
 ```
 
 ### Informative (not required to use the index)
 
 The following containers illustrate the structure and operation of the index and are referred
-to in subsequent sections.
-No SSZ serialization/deserialization is performed on these containers.
-Use of the index requires implementation of these containers.
+to in subsequent sections. No SSZ serialization/deserialization is performed on these containers.
+
+Use of the index or manifest does not require implementation of these containers.
 
 #### `AddressDivision`
 
 This is the functional unit that a user acquires from a peer.
-A collection data for similar addresses. Named using a division identifier (e.g., `5a`).
-Contains serialized and compressed units, one per `BLOCK_RANGE` blocks.
+A collection of data for similar addresses. A division contains serialized and compressed
+[subsets](#addressindexsubset) that cover discrete block ranges of transaction data (one
+subset for every `BLOCK_RANGE` blocks).
+
 Total members is calculated by latest block height divided by `BLOCK_RANGE_WIDTH`.
+
+The elements in the members list are sorted lexicographically by their
+oldest block (`AddressIndexSubset.range.old`) field.
 
 ```python
 class AddressDivision(Container):
-    identifier: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
-    members: List(AddressIndexSubset, MAX_RANGES)
+    identifier: DivisionIdentifier
+    members: List[AddressIndexSubset, MAX_RANGES]
 ```
 
 #### `AddressAppearanceIndex`
@@ -255,45 +375,7 @@ for a different purposse.
 
 ```python
 class AddressAppearanceIndex(Container):
-    divisions: Vector(AddressDivision, NUM_DIVISIONS)
-```
-
-#### `ManifestSubsetHash`
-
-Used to create the index [manifest](#manifest). This unit represents a store for the hash of a single
-[`AddressIndexSubset`](#addressindexsubset). The hash is the tree root hash,
-as defined in the [ssz spec](#ssz-spec).
-
-```python
-class ManifestSubsetHash(Container):
-    address_prefix: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
-    lowest_block: uint32
-    tree_root_hash: uint256
-```
-
-#### `ManifestDivision`
-
-Used to create the index [manifest](#manifest). This unit stores the [subset hashes] for a single [`AddressDivision`](#addressdivision) with a given identifier (e.g., `5a`).
-
-```python
-class ManifestDivision(Container):
-  identifier: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
-  subset_hashes: List[ManifestSubsetHash, MAX_RANGES]
-```
-
-#### `IndexManifest`
-
-This is a container that represents a file containing metadata about the index.
-It is a record of the components of a specific instantiation of the index.
-The manifest keeps the hash of all [`AddressIndexSubset`](#addressindexsubset)s.
-It is updated as the chain progresses.
-
-
-```python
-class IndexManifest(Containr):
-    spec_version: uint32
-    manifest_version: uint32
-    division_hashes: Vector(ManifestDivision)
+    divisions: Vector[AddressDivision, NUM_DIVISIONS]
 ```
 
 ## Definitions and aliases
@@ -306,6 +388,9 @@ of length `BYTES_PER_ADDRESS`. Usually displayed in hexadecimal representation.
 *Division*: See [`AddressDivision`](#addressdivision).
 
 *Division identifier*: The hexadecimal characters that is common to all addresses in an [`AddressDivision`](#addressdivision). E.g., `0xa3`.
+
+*Manifest*: The [`IndexManifest`](#indexmanifest) that contains metadata about a particular
+instantiation of the index. Useful for obtaining and checking the index data.
 
 *Subset*: See [`AddressIndexSubset`](#addressindexsubset).
 
@@ -332,7 +417,7 @@ A entity that has the ability to create or distribute the full index.
 
 #### Agent type: User
 
-A entity a part of the index.
+A entity that has a part of the index (such as one or more [division](#addressdivision)s).
 
 ### Service assumed from the data layer
 
@@ -356,7 +441,9 @@ The following are assumed to be available from external systems.
 
 ## Index architecture
 
-### Data
+Descriptions of components of the index.
+
+### Data architecture description
 
 - Address group.
 - Block range division.
@@ -370,7 +457,8 @@ This makes direct file transfer between peers more robust in some situations. Th
 are excluded from the file name. Patterns are provided using regular expressions.
 
 Directory representing [the index](#addressappearanceindex), where:
-- "NETWORK" is the network name. E.g., ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228).
+- "NETWORK" is the ASCII-decoded string representation of the
+[network identifier](#networkidentifier).
 ```sh
 Format: address_appearance_index_{NETWORK}
 
@@ -379,8 +467,11 @@ Regular expression: "/^address_appearance_index_+[a-z]$/"
 Example directory: ./address_appearance_index_mainnet/
 ```
 
-Directory representing a [division](#addressdivision), where:
-- "DIVISION_DESCRIPTOR" has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+Directory representing a [division](#addressdivision), named using the
+[division identifier](#divisionidentifier), where:
+
+- "DIVISION_DESCRIPTOR" is the hexadecimal string representation of the
+[division identifier](#divisionidentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
 ```sh
 Format: division_0x{DIVISION_DESCRIPTOR}
 
@@ -389,16 +480,21 @@ Regular expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
 Example directory: ./division_Ox4e/
 ```
 
-File representing a [subset](#addressindexsubset), where:
-- "DIVISION_DESCRIPTOR" has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
-- "SUBSET_DESCRIPTOR" is padded to 9 decimal characters and divided into groups of 3 characters.
-Block `14_500_000` is shown in the example.
-- "encoding" is one of two choices:
+File representing a [subset](#addressindexsubset), named using the
+[subset identifier](#subsetidentifier), with components:
+
+- "DIVISION_DESCRIPTOR"
+  - The hexadecimal string representation of the [division identifier](#divisionidentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+- "SUBSET_DESCRIPTOR"
+  - The decimal string representation of the [subset identifier](#subsetidentifier).
+  - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters. Block `14_500_000` is shown in the example.
+- "ENCODING", which may be one of two choices:
   - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
-  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by encoding with
-  [snappy](#snappy).
+  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
+  encoding with [snappy](#snappy). This format is preferred for network transmission.
+
 ```sh
-Format: division_0x{DIVISION_DESCRIPTOR}_subset_{SUBSET_DESCRIPTOR}.{encoding}
+Format: division_0x{DIVISION_DESCRIPTOR}_subset_{SUBSET_DESCRIPTOR}.{ENCODING}
 
 Regular Expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_subset(_[0-9]{3}){3}.ssz(_snappy)?$/"
 
@@ -435,7 +531,7 @@ def estimate_file_count(block_height):
 print(estimate_file_count(15_400_000))
 > 39424
 ```
-### Manifest
+### Manifest architecture description
 
 The manifest is a file that serves as a reference for users to maintain up to date data. It
 contains the [index manifest](#indexmanifest) data encoded with
@@ -500,3 +596,12 @@ Resilient: The index can be reconstructed if lost.
 Multiclient: The index can be used by different projects, wherever information about a particular
 address is required (such as wallets and light-style clients).
 
+## Versioning
+
+This specification is versioned according to [semver][1]. This may be useful in the situation
+where a user has received parts of the index from two different sources. By examining the
+manifest from each source, the peer can decide if the sources are comptatible (use both) or not
+(select one).
+
+
+[1]: https://semver.org/
