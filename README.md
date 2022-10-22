@@ -1,6 +1,6 @@
 # address-appearance-index-specs
 
-A specification of an [index](#addressappearanceindex) that maps addresses to the transactions that they appear in.
+A specification of an index](#addressappearanceindex) that maps addresses to the transactions that they appear in.
 The index is divisible and distributable.
 
 > Status: draft
@@ -29,14 +29,13 @@ Table of contents
     - [Data (required to use the index data)](#data-required-to-use-the-index-data)
       - [`AppearanceTx`](#appearancetx)
       - [`AddressAppearances`](#addressappearances)
-      - [`BlockRange`](#blockrange)
       - [`AddressIndexSubset`](#addressindexsubset)
     - [Metadata (required to use the index manifest)](#metadata-required-to-use-the-index-manifest)
       - [`SubsetIdentifier`](#subsetidentifier)
       - [`ManifestSubset`](#manifestsubset)
-    - [`DivisionIdentifier`](#divisionidentifier)
+      - [`DivisionIdentifier`](#divisionidentifier)
       - [`ManifestDivision`](#manifestdivision)
-      - [`NetworkIdentifier`](#networkidentifier)
+      - [`NetworkName`](#networkname)
       - [`IndexManifest`](#indexmanifest)
     - [Informative (not required to use the index)](#informative-not-required-to-use-the-index)
       - [`AddressDivision`](#addressdivision)
@@ -147,8 +146,8 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 
 | Name | Value | Description |
 | - | - | - |
-| `BYTES_PER_ADDRESS` | `uint32(20)` | Number of bytes for an address (E.g., `20` bytes on mainnet). May be different on some networks. |
-| `NETWORK_IDENTIFIER_BYTES` | `uint32(2**5)` (=32) | Maximum number of bytes available to represent the ASCII-encoded network identifier. E.g. The string ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228) is 7 bytes. |
+| `DEFAULT_BYTES_PER_ADDRESS` | `uint32(20)` | Number of bytes for an address (E.g., `20` bytes on mainnet). May be different on some networks. |
+| `MAX_NETWORK_NAME_BYTES` | `uint32(2**5)` (=32) | Maximum number of bytes available to represent the ASCII-encoded network name. E.g. The string ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228) is 7 bytes. |
 
 ### Variable-size type parameters
 
@@ -167,6 +166,7 @@ Constants derived from [design parameters](#design-parameters).
 | Name | Value | Description |
 | - | - | - |
 | `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how many pieces the index can be split. |
+| `NUM_COMMON_BYTES` | `uint32((ADDRESS_CHARS_SIMILARITY_DEPTH + 1) // 2)` (=1) | The number of bytes needed to represent the `ADDRESS_CHARS_SIMILARITY_DEPTH` characters. E.g., 1 or 2 chars is 1 byte, 3 or 4 chars is 2 bytes|
 
 ## Containers
 
@@ -204,22 +204,8 @@ The elements in the appearances list are sorted lexicographically first by their
 
 ```python
 class AddressAppearances(Container):
-    address: Vector[byte, BYTES_PER_ADDRESS]
+    address: Vector[byte, DEFAULT_BYTES_PER_ADDRESS]
     appearances: List[AppearanceTx, MAX_TXS_PER_BLOCK_RANGE]
-```
-
-#### `BlockRange`
-
-An inclusive range of block numbers (heights) used to define which transactions are
-suitable for inclusion in a given container. The `old` block is used as
-the identifier for the parent `AddressIndexSubset`. The `BlockRange` represents
-`BLOCK_RANGE_WIDTH` members and as such, the `new` block is defined
-as ` new = old + BLOCK_RANGE_WIDTH - 1`.
-
-```python
-class BlockRange(Container):
-    old: uint32
-    new: uint32
 ```
 
 #### `AddressIndexSubset`
@@ -234,10 +220,18 @@ range requirements.
 The elements in the addresses list are sorted lexicographically by their address
 (`AddressAppearances.address`) field
 
+Components:
+- `address_prefix`. The byte representation of the common characters that the addresses
+all start with. Defined by the parent [`division`](#addressdivision) and inclueded here for
+clarity.
+- `identifier`. The [subset identifier](#subsetidentifier) that defines which blocks the subset
+includes.
+- `addresses`. Contains transaction data for addresses.
+
 ```python
 class AddressIndexSubset(Container):
-    address_prefix: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
-    range: BlockRange
+    address_prefix: ByteVector[NUM_COMMON_BYTES]
+    identifier: SubsetIdentifier
     addresses: List[AddressAppearances, MAX_ADDRESSES_PER_BLOCK_RANGE]
 ```
 
@@ -251,17 +245,20 @@ Use of the index manifest requires implementation of these containers.
 
 #### `SubsetIdentifier`
 
-Each [subset](#addressindexsubset) has an identifer, defined as `AddressIndexSubset.range.old`
-(the oldest block that the subset data may contain).
-For example, the first subset has the identifier block `0` (it contains data
-for block `0`) and the second subset has identifier `BLOCK_RANGE_WIDTH`.
-
+Used to refer to a particular [subset](#addressindexsubset).
 The identifier is used in the [manifest](#manifest) and in the
 [naming conventions](#string-naming-conventions) for index files.
 
+Components:
+- `oldest_block` defines the oldest block that a [subset](#addressindexsubset] includes.
+  - Subsets represent `BLOCK_RANGE_WIDTH` blocks, therefore the inclusive range is
+  `[oldest_block, oldest_block + BLOCK_RANGE_WIDTH - 1]`.
+  - E.g., a subset identifier with `oldest_block=15_300_000` and `BLOCK_RANGE_WIDTH=100_000` then
+  blocks included are `[15_300_000, 15_399_999]`.
+
 ```python
 class SubsetIdentifier(Conainer):
-    identifier: uint32
+    oldest_block: uint32
 ```
 
 #### `ManifestSubset`
@@ -278,17 +275,23 @@ class ManifestSubset(Container):
     tree_root_hash: uint256
 ```
 
-### `DivisionIdentifier`
+#### `DivisionIdentifier`
 
-An identifier defines the member addresses for a [division](#addressdivision). Addresses
-all start with the same bytes, E.g., `5a`.
+An identifier defines the member addresses for a [division](#addressdivision).
+It is the byte representation of the hex characters that are common to all addresses
+within a division E.g., byte representation of `0x5a`.
 
-The identifier is also used in [naming conventions](#string-naming-conventions) for
-index directories.
+The identifier is also used in the [manifest](#manifestdivision) and in
+[naming conventions](#string-naming-conventions) for index directories.
+
+Components:
+- `address_common_bytes` the byte representation of the hex characters that similar addresses
+share. The number of characters are defined by `ADDRESS_CHARS_SIMILARITY_DEPTH`, and
+the bytes needed to represent these characters are defined as `NUM_COMMON_BYTES`.
 
 ```python
 class DivisionIdentifier(Container):
-    identifier: ByteVector[ADDRESS_CHARS_SIMILARITY_DEPTH]
+    address_common_bytes: ByteVector[NUM_COMMON_BYTES]
 ```
 
 #### `ManifestDivision`
@@ -306,14 +309,14 @@ class ManifestDivision(Container):
     subset_metadata: List[ManifestSubset, MAX_RANGES]
 ```
 
-#### `NetworkIdentifier`
+#### `NetworkName`
 
 Used to identify the network that the index data belongs to. The network
-is represented as an ASCII-encoded byte vector with maximum length `NETWORK_IDENTIFIER_BYTES`.
+is represented as an ASCII-encoded byte vector with maximum length `MAX_NETWORK_NAME_BYTES`.
 
 ```python
-class NetworkIdentifier(Container):
-    name: ByteVector[NETWORK_IDENTIFIER_BYTES]
+class NetworkName(Container):
+    name: VariableList[uint8, MAX_NETWORK_NAME_BYTES]
 ```
 
 #### `IndexManifest`
@@ -327,7 +330,7 @@ a new manifest is generated to reflect the contents of the index.
 The manifest includes:
 - The [specification version](#versioning) declared as three separate `spec_version_major`,
 `spec_version_minor` and `spec_version_patch` integers.
-- The [network](#networkidentifier)
+- The [network](#networkName)
 - The [latest_subset_identifier](#subsetidentifier) of the highest (latest) completed [subset](#addressindexsubset).
 - The [division_metadata](#manifestdivision) which each contain the hashes of the subset.
   - The elements in the division metadata vector are sorted lexicographically by their
@@ -338,7 +341,7 @@ class IndexManifest(Containr):
     spec_version_major: uint32
     spec_version_minor: uint32
     spec_version_patch: uint32
-    network: NetworkIdentifier
+    network: NetworkName
     latest_subset_identifier: SubsetIdentifier
     division_metadata: Vector[ManifestDivision, NUM_DIVISIONS]
 ```
@@ -376,7 +379,7 @@ ultimately containing transaction identifiers as [`AppearanceTx`](#appearancetx)
 The index is divided into `NUM_DIVISIONS` functional units.
 
 The index is a derivative of the Unchained Index, and contains the same data, reorganised
-for a different purposse.
+for a different purpose.
 
 ```python
 class AddressAppearanceIndex(Container):
@@ -388,11 +391,12 @@ class AddressAppearanceIndex(Container):
 The following terms may be used in subsequent descriptions.
 
 *Address*: An identifier used for wallets and accounts in Ethereum. Is a byte vector
-of length `BYTES_PER_ADDRESS`. Usually displayed in hexadecimal representation.
+of length `DEFAULT_BYTES_PER_ADDRESS`. Usually displayed in hexadecimal representation.
 
 *Division*: See [`AddressDivision`](#addressdivision).
 
-*Division identifier*: The hexadecimal characters that is common to all addresses in an [`AddressDivision`](#addressdivision). E.g., `0xa3`.
+*Division identifier*: The hexadecimal characters that is common to all addresses in an
+[`AddressDivision`](#addressdivision). E.g., `0xa3`.
 
 *Manifest*: The [`IndexManifest`](#indexmanifest) that contains metadata about a particular
 instantiation of the index. Useful for obtaining and checking the index data.
@@ -403,7 +407,8 @@ instantiation of the index. Useful for obtaining and checking the index data.
 [`AddressIndexSubset`](#addressindexsubset).
 E.g., subset `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive.
 
-*Similar address*: Two addresses are similar if they share their first characters in hexadecimal representation to a depth of `ADDRESS_CHARS_SIMILARITY_DEPTH`.
+*Similar address*: Two addresses are similar if they share their first characters in hexadecimal
+representation to a depth of `ADDRESS_CHARS_SIMILARITY_DEPTH`.
 
 *The index*: The address-appearance-index. See [`AddressAppearanceIndex`](#addressappearanceindex).
 
@@ -461,9 +466,10 @@ In the case where files are being stored, the following naming conventions are r
 This makes direct file transfer between peers more robust in some situations. The "{}" braces
 are excluded from the file name. Patterns are provided using regular expressions.
 
-Directory representing [the index](#addressappearanceindex), where:
+---
+Directory representing the [index](#addressappearanceindex), where:
 - "NETWORK" is the ASCII-decoded string representation of the
-[network identifier](#networkidentifier).
+[network name](#networkName).
 ```sh
 Format: address_appearance_index_{NETWORK}
 
@@ -471,7 +477,7 @@ Regular expression: "/^address_appearance_index_+[a-z]$/"
 
 Example directory: ./address_appearance_index_mainnet/
 ```
-
+---
 Directory representing a [division](#addressdivision), named using the
 [division identifier](#divisionidentifier), where:
 
@@ -480,11 +486,11 @@ Directory representing a [division](#addressdivision), named using the
 ```sh
 Format: division_0x{DIVISION_DESCRIPTOR}
 
-Regular expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
+Regular expression: "/^division_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
 
 Example directory: ./division_Ox4e/
 ```
-
+---
 File representing a [subset](#addressindexsubset), named using the
 [subset identifier](#subsetidentifier), with components:
 
@@ -501,32 +507,37 @@ File representing a [subset](#addressindexsubset), named using the
 ```sh
 Format: division_0x{DIVISION_DESCRIPTOR}_subset_{SUBSET_DESCRIPTOR}.{ENCODING}
 
-Regular Expression: "/^division_0x[0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_subset(_[0-9]{3}){3}.ssz(_snappy)?$/"
+Regular Expression: "/^division_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_subset(_[a-z0-9]{3}){3}.ssz(_snappy)?$/"
 
 Example file: ./division_0x4e_subset_014_500_000.ssz
 Example file: ./division_0x4e_subset_014_500_000.ssz_snappy
 ```
+---
+File representing a [manifest](#indexmanifest). The file name contains the
+spec version used, which is required to know the definitions of the SSZ types.
+The components of the name are:
 
-File representing a [manifest](#indexmanifest), named with component:
-
+- "MAJOR", the [`spec_version_major`](#indexmanifest).
+- "MINOR", the [`spec_version_minor`](#indexmanifest).
+- "PATCH", the [`spec_version_patch`](#indexmanifest).
 - "ENCODING", which may be one of two choices:
   - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
   - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
   encoding with [snappy](#snappy). This format is preferred for network transmission.
 
 ```sh
-Format: manifest.{ENCODING}
+Format: manifest_v_{MAJOR}_{MINOR}_{PATCH}.{ENCODING}
 
-Regular Expression: "/^manifest.ssz(_snappy)?$/"
+Regular Expression: "/^manifest_v(_[0-9]{2}){3}.ssz(_snappy)?$/"
 
-Example file: ./manifest.ssz
-Example file: ./manifest.ssz_snappy
+Example file (spec v0.1.2): ./manifest_v_00_01_02.ssz
+Example file (spec v0.1.2): ./manifest_v_00_01_02.ssz_snappy
 ```
-
+---
 Example of a suggested complete index folder structure:
 ```sh
 - ./address_appearance_index_mainnet/
-    - manifest.ssz_snappy
+    - manifest_v_00_01_00.ssz_snappy
     - ...
     - /division_Ox4e/
         - ...
