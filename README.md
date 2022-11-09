@@ -57,10 +57,11 @@ Table of contents
     - [Maintenance: Creation](#maintenance-creation)
     - [Maintenance: Extension](#maintenance-extension)
     - [Maintenance: Correctness audit](#maintenance-correctness-audit)
-    - [User: Consumption](#user-consumption)
-    - [User: Completeness audit](#user-completeness-audit)
+    - [User: Find transactions](#user-find-transactions)
+    - [User: Check completeness](#user-check-completeness)
   - [Design principles](#design-principles)
   - [Versioning](#versioning)
+
 <!-- END doctoc -->
 
 ## Introduction
@@ -83,8 +84,8 @@ The index structure definition begins at [`AddressAppearanceIndex`](#addressappe
     - Maintenance: Creation
     - Maintenance: Extension
     - Maintenance: Correctness audit
-    - User: Consumption
-    - User: Completeness audit
+    - User: Find transactions
+    - User: Check completeness
 
 ## Notation
 
@@ -147,7 +148,9 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | Name | Value | Description |
 | - | - | - |
 | `DEFAULT_BYTES_PER_ADDRESS` | `uint32(20)` | Number of bytes for an address (E.g., `20` bytes on mainnet). May be different on some networks. |
-| `MAX_NETWORK_NAME_BYTES` | `uint32(2**5)` (=32) | Maximum number of bytes available to represent the ASCII-encoded network name. E.g. The string ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228) is 7 bytes. |
+| `MAX_NETWORK_NAME_BYTES` | `uint32(2**5)` (=32) | Maximum number of bytes available to represent the ASCII-encoded string network name. E.g. The string ["mainnet"](https://eips.ethereum.org/EIPS/eip-2228) is 7 bytes. |
+| `MAX_SCHEMAS_RESOURCE_BYTES` | `uint32(2**7)` (=128) |  Maximum number of bytes available to represent the ASCII-encoded string that refers to this specification. |
+| `MAX_PUBLISH_ID_BYTES` | `uint32(2**6)` (=64) | Maximum number of bytes available to represent the ASCII-encoded string to publishing the manifest under. |
 
 ### Variable-size type parameters
 
@@ -319,6 +322,56 @@ class NetworkName(Container):
     name: VariableList[uint8, MAX_NETWORK_NAME_BYTES]
 ```
 
+#### `IndexSpecificationVersion`
+
+Used to manage compatibility between different instantiations of data. For
+example, a breaking change that one party has upgraded to, sharing a manifest with
+another who has not upgraded. The version notifies the second party that some
+of their data may need to be replaced.
+
+This specification is versioned according to [semver][1]. This may be useful in the situation
+where a user has received parts of the index from two different sources. By examining the
+manifest from each source, the peer can decide if the sources are compatible (use both) or not
+(select one).
+
+[1]: https://semver.org/
+
+```python
+class IndexSpecificationVersion(Container):
+    spec_version_major: uint32
+    spec_version_minor: uint32
+    spec_version_patch: uint32
+```
+
+#### `IndexSpecificationSchemas`
+
+The ASCII-encoded bytes that can be used to obtain this specification.
+
+The specification may then be a resource for using the manifest. For example, a link to this
+github page or an Interplanetary File System (IPFS) Content Identifier (CID).
+
+The byte ASCII-encoded string has a maximum byte length of `MAX_SCHEMAS_RESOURCE_BYTES`.
+
+```python
+class IndexSpecificationSchemas(Container):
+    resource: VariableList[uint8, MAX_SCHEMAS_RESOURCE_BYTES]
+```
+
+#### `IndexPublishingIdentifier`
+
+The  ASCII-encoded bytes that can be used to publish or broadcast the manifest with.
+
+This serves as a coordination mechanism for parties sharing the manifest. For example,
+the manifest hash may be published and looked up in a smart contract using this identifier.
+
+The decoded string must a concatenation of "address_appearance_index_" and the network
+ASCII-decoded `NetworkName`. For example "address_appearance_index_mainnet".
+
+```python
+class IndexPublishingIdentifier(Container):
+    topic: VariableList[uint8, MAX_PUBLISH_ID_BYTES]
+```
+
 #### `IndexManifest`
 
 This is a container that represents a file containing metadata about the index.
@@ -328,8 +381,9 @@ If the index is updated to include newer data as the chain progresses,
 a new manifest is generated to reflect the contents of the index.
 
 The manifest includes:
-- The [specification version](#versioning) declared as three separate `spec_version_major`,
-`spec_version_minor` and `spec_version_patch` integers.
+- The [version](#version) of the specification used to construct the data.
+- The [schemas](#indexspecificationschemas) resource link.
+- The [publish_as_topic](#indexpublishingidentifier) identifier.
 - The [network](#networkName)
 - The [latest_subset_identifier](#subsetidentifier) of the highest (latest) completed [subset](#addressindexsubset).
 - The [division_metadata](#manifestdivision) which each contain the hashes of the subset.
@@ -338,9 +392,9 @@ identifier (`ManifestDivision.identifier`) field.
 
 ```python
 class IndexManifest(Containr):
-    spec_version_major: uint32
-    spec_version_minor: uint32
-    spec_version_patch: uint32
+    version: IndexSpecificationVersion
+    schemas: IndexSpecificationSchemas
+    publish_as_topic: IndexPublishingIdentifier
     network: NetworkName
     latest_subset_identifier: SubsetIdentifier
     division_metadata: Vector[ManifestDivision, NUM_DIVISIONS]
@@ -574,8 +628,9 @@ contains the [index manifest](#indexmanifest) data encoded with
 - Manifest version
 - Lists of files and their hashes.
 
-The manifest is produced by maintenance [creation](#maintenance-creation) and [extension](#maintenance-extension) procedures and utilised during user
-[completeness audits](#user-completeness-audit). This enables a user to efficiently determine
+The manifest is produced by maintenance [creation](#maintenance-creation) and
+[extension](#maintenance-extension) procedures and utilised during user
+[check completeness](#user-check-completeness). This enables a user to efficiently determine
 the the nature of any pieces of the index that they require from a third party.
 
 ## Procedures
@@ -601,12 +656,13 @@ Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
 - For a selected appearance(s), check that the transaction appears in the reference ground truth
 (E.g., Unchained Index or tracing node).
 
-### User: Consumption
+### User: Find transactions
 
-- For a given address go through each subset file and look up the trasaction information for each appearance. Use transaction information to request transaction data from other services
+- For a given address go through each subset file and look up the trasaction information for
+each appearance. Use transaction information to request transaction data from other services
 (portal network peer)
 
-### User: Completeness audit
+### User: Check completeness
 
 - Obtain a manifest from a peer. For each subset file, compute the root tree hash and verify
 it matches the record in the manifest. Check that there are no missing subset files for the
@@ -628,13 +684,3 @@ Resilient: The index can be reconstructed if lost.
 
 Multiclient: The index can be used by different projects, wherever information about a particular
 address is required (such as wallets and light-style clients).
-
-## Versioning
-
-This specification is versioned according to [semver][1]. This may be useful in the situation
-where a user has received parts of the index from two different sources. By examining the
-manifest from each source, the peer can decide if the sources are comptatible (use both) or not
-(select one).
-
-
-[1]: https://semver.org/
