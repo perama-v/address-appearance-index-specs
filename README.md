@@ -1,7 +1,9 @@
 # address-appearance-index-specs
 
-A specification of an index](#addressappearanceindex) that maps addresses to the transactions that they appear in.
-The index is divisible and distributable.
+A specification of an index that maps addresses to the
+transactions that they appear in.
+
+The index conforms to ERC-time-ordered-distributed-database.
 
 > Status: draft
 
