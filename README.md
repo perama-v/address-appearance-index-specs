@@ -383,10 +383,10 @@ If the index is updated to include newer data as the chain progresses,
 a new manifest is generated to reflect the contents of the index.
 
 The manifest includes:
-- The [version](#version) of the specification used to construct the data.
+- The [version](#indexspecificationversion) of the specification used to construct the data.
 - The [schemas](#indexspecificationschemas) resource link.
 - The [publish_as_topic](#indexpublishingidentifier) identifier.
-- The [network](#networkName)
+- The [network](#networkname)
 - The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed [volume](#addressindexvolume).
 - The [chapter_metadata](#manifestchapter) which each contain the hashes of the volume.
   - The elements in the chapter metadata vector are sorted lexicographically by their
@@ -576,18 +576,13 @@ The components of the name are:
 - "MAJOR", the [`spec_version_major`](#indexmanifest).
 - "MINOR", the [`spec_version_minor`](#indexmanifest).
 - "PATCH", the [`spec_version_patch`](#indexmanifest).
-- "ENCODING", which may be one of two choices:
-  - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
-  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
-  encoding with [snappy](#snappy). This format is preferred for network transmission.
 
 ```sh
-Format: manifest_v_{MAJOR}_{MINOR}_{PATCH}.{ENCODING}
+Format: manifest_v_{MAJOR}_{MINOR}_{PATCH}.json
 
-Regular Expression: "/^manifest_v(_[0-9]{2}){3}.ssz(_snappy)?$/"
+Regular Expression: "/^manifest_v(_[0-9]{2}){3}.json$/"
 
-Example file (spec v0.1.2): ./manifest_v_00_01_02.ssz
-Example file (spec v0.1.2): ./manifest_v_00_01_02.ssz_snappy
+Example file (spec v0.1.2): ./manifest_v_00_01_02.json
 ```
 ---
 Example of a suggested complete index folder structure:
