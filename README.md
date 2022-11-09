@@ -29,16 +29,16 @@ Table of contents
     - [Data (required to use the index data)](#data-required-to-use-the-index-data)
       - [`AppearanceTx`](#appearancetx)
       - [`AddressAppearances`](#addressappearances)
-      - [`AddressIndexSubset`](#addressindexsubset)
+      - [`AddressIndexVolume`](#addressindexvolume)
     - [Metadata (required to use the index manifest)](#metadata-required-to-use-the-index-manifest)
-      - [`SubsetIdentifier`](#subsetidentifier)
-      - [`ManifestSubset`](#manifestsubset)
-      - [`DivisionIdentifier`](#divisionidentifier)
-      - [`ManifestDivision`](#manifestdivision)
+      - [`VolumeIdentifier`](#volumeidentifier)
+      - [`ManifestVolume`](#manifestvolume)
+      - [`ChapterIdentifier`](#chapteridentifier)
+      - [`ManifestChapter`](#manifestchapter)
       - [`NetworkName`](#networkname)
       - [`IndexManifest`](#indexmanifest)
     - [Informative (not required to use the index)](#informative-not-required-to-use-the-index)
-      - [`AddressDivision`](#addressdivision)
+      - [`AddressChapter`](#addresschapter)
       - [`AddressAppearanceIndex`](#addressappearanceindex)
   - [Definitions and aliases](#definitions-and-aliases)
   - [Overview of the address-appearance-index](#overview-of-the-address-appearance-index)
@@ -72,8 +72,8 @@ The index structure definition begins at [`AddressAppearanceIndex`](#addressappe
 
 - Index architecture:
     - Data
-        - Address divisions
-        - address index subsets
+        - Address chapters
+        - address index volumes
         - Serialization
         - Compression
     - Manifest
@@ -140,7 +140,7 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | Name | Value | Description |
 | - | - | - |
 | `ADDRESS_CHARS_SIMILARITY_DEPTH` | `uint32(2)` | A parameter for the number of identical characters that two similar addresses share in hexadecimal representation. If the value is `2`, address`0xa350...9c45` will be evaluated for similarity using the characters `0xa3`. |
-| `BLOCK_RANGE_WIDTH` | `uint32(10*5)` (=100_000) | Number of blocks in a address index subset. Index maintenance operates at this cadence (~2 weeks) |
+| `BLOCK_RANGE_WIDTH` | `uint32(10*5)` (=100_000) | Number of blocks in a address index volume. Index maintenance operates at this cadence (~2 weeks) |
 
 ### Fixed-size type parameters
 
@@ -168,7 +168,7 @@ Constants derived from [design parameters](#design-parameters).
 
 | Name | Value | Description |
 | - | - | - |
-| `NUM_DIVISIONS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how many pieces the index can be split. |
+| `NUM_CHAPTERS` | `uint32(16**ADDRESS_CHARS_SIMILARITY_DEPTH)` (=256) | Number of unique hex character combinations possible. Represents how many pieces the index can be split. |
 | `NUM_COMMON_BYTES` | `uint32((ADDRESS_CHARS_SIMILARITY_DEPTH + 1) // 2)` (=1) | The number of bytes needed to represent the `ADDRESS_CHARS_SIMILARITY_DEPTH` characters. E.g., 1 or 2 chars is 1 byte, 3 or 4 chars is 2 bytes|
 
 ## Containers
@@ -178,7 +178,7 @@ important for serialization/deserialization.
 
 ### Data (required to use the index data)
 
-The `AddressIndexSubset` is the main container in this section and is
+The `AddressIndexVolume` is the main container in this section and is
 subject to SSZ serialization/deserialization to create/access the index data.
 
 The remaining containers are components of that container.
@@ -199,7 +199,7 @@ class AppearanceTx(Container):
 #### `AddressAppearances`
 
 This unit holds transactions for a single address. All transactions are from blocks
-within the range defined in the parent AddressIndexSubset.
+within the range defined in the parent AddressIndexVolume.
 
 The elements in the appearances list are sorted lexicographically first by their block
 (`AppearanceTx.block`) field, and then by their index (`AppearanceTx.index`) field
@@ -211,7 +211,7 @@ class AddressAppearances(Container):
     appearances: List[AppearanceTx, MAX_TXS_PER_BLOCK_RANGE]
 ```
 
-#### `AddressIndexSubset`
+#### `AddressIndexVolume`
 
 Many of these units form a functional unit for a user.
 It is the unit that is subject to SSZ serialization then compression
@@ -225,16 +225,16 @@ The elements in the addresses list are sorted lexicographically by their address
 
 Components:
 - `address_prefix`. The byte representation of the common characters that the addresses
-all start with. Defined by the parent [`division`](#addressdivision) and inclueded here for
+all start with. Defined by the parent [`chapter`](#addresschapter) and inclueded here for
 clarity.
-- `identifier`. The [subset identifier](#subsetidentifier) that defines which blocks the subset
+- `identifier`. The [volume identifier](#volumeidentifier) that defines which blocks the volume
 includes.
 - `addresses`. Contains transaction data for addresses.
 
 ```python
-class AddressIndexSubset(Container):
+class AddressIndexVolume(Container):
     address_prefix: ByteVector[NUM_COMMON_BYTES]
-    identifier: SubsetIdentifier
+    identifier: VolumeIdentifier
     addresses: List[AddressAppearances, MAX_ADDRESSES_PER_BLOCK_RANGE]
 ```
 
@@ -246,45 +246,45 @@ subject to SSZ serialization/deserialization to create/access the index manifest
 The remaining containers are components of that container.
 Use of the index manifest requires implementation of these containers.
 
-#### `SubsetIdentifier`
+#### `VolumeIdentifier`
 
-Used to refer to a particular [subset](#addressindexsubset).
+Used to refer to a particular [volume](#addressindexvolume).
 The identifier is used in the [manifest](#manifest) and in the
 [naming conventions](#string-naming-conventions) for index files.
 
 Components:
-- `oldest_block` defines the oldest block that a [subset](#addressindexsubset] includes.
-  - Subsets represent `BLOCK_RANGE_WIDTH` blocks, therefore the inclusive range is
+- `oldest_block` defines the oldest block that a [volume](#addressindexvolume] includes.
+  - Volumes represent `BLOCK_RANGE_WIDTH` blocks, therefore the inclusive range is
   `[oldest_block, oldest_block + BLOCK_RANGE_WIDTH - 1]`.
-  - E.g., a subset identifier with `oldest_block=15_300_000` and `BLOCK_RANGE_WIDTH=100_000` then
+  - E.g., a volume identifier with `oldest_block=15_300_000` and `BLOCK_RANGE_WIDTH=100_000` then
   blocks included are `[15_300_000, 15_399_999]`.
 
 ```python
-class SubsetIdentifier(Conainer):
+class VolumeIdentifier(Conainer):
     oldest_block: uint32
 ```
 
-#### `ManifestSubset`
+#### `ManifestVolume`
 
 Used to create the index [manifest](#manifest). This unit represents a store for the hash of a single
-[`AddressIndexSubset`](#addressindexsubset). The hash is the tree root hash,
+[`AddressIndexVolume`](#addressindexvolume). The hash is the tree root hash,
 as defined in the [ssz spec](#ssz-spec).
 
-A single subset may be referred to by it's [identifier](#subsetidentifier).
+A single volume may be referred to by it's [identifier](#volumeidentifier).
 
 ```python
-class ManifestSubset(Container):
-    identifier: SubsetIdentifier
+class ManifestVolume(Container):
+    identifier: VolumeIdentifier
     tree_root_hash: uint256
 ```
 
-#### `DivisionIdentifier`
+#### `ChapterIdentifier`
 
-An identifier defines the member addresses for a [division](#addressdivision).
+An identifier defines the member addresses for a [chapter](#addresschapter).
 It is the byte representation of the hex characters that are common to all addresses
-within a division E.g., byte representation of `0x5a`.
+within a chapter E.g., byte representation of `0x5a`.
 
-The identifier is also used in the [manifest](#manifestdivision) and in
+The identifier is also used in the [manifest](#manifestchapter) and in
 [naming conventions](#string-naming-conventions) for index directories.
 
 Components:
@@ -293,23 +293,23 @@ share. The number of characters are defined by `ADDRESS_CHARS_SIMILARITY_DEPTH`,
 the bytes needed to represent these characters are defined as `NUM_COMMON_BYTES`.
 
 ```python
-class DivisionIdentifier(Container):
+class ChapterIdentifier(Container):
     address_common_bytes: ByteVector[NUM_COMMON_BYTES]
 ```
 
-#### `ManifestDivision`
+#### `ManifestChapter`
 
 Used to create the index [manifest](#manifest).
-This unit stores the [subset metadata](#manifestsubset) for a single
-[`AddressDivision`](#addressdivision) with a given [identifier](#divisionidentifier).
+This unit stores the [volume metadata](#manifestvolume) for a single
+[`AddressChapter`](#addresschapter) with a given [identifier](#chapteridentifier).
 
-The elements in the `subset_metadata` list are sorted lexicographically by their
-identifier (`ManifestSubset.identifier`) field.
+The elements in the `volume_metadata` list are sorted lexicographically by their
+identifier (`ManifestVolume.identifier`) field.
 
 ```python
-class ManifestDivision(Container):
-    identifier: DivisionIdentifier
-    subset_metadata: List[ManifestSubset, MAX_RANGES]
+class ManifestChapter(Container):
+    identifier: ChapterIdentifier
+    volume_metadata: List[ManifestVolume, MAX_RANGES]
 ```
 
 #### `NetworkName`
@@ -376,7 +376,7 @@ class IndexPublishingIdentifier(Container):
 
 This is a container that represents a file containing metadata about the index.
 It is a record of the components of a specific instantiation of the index.
-The manifest keeps the hash of all [`AddressIndexSubset`](#addressindexsubset)s.
+The manifest keeps the hash of all [`AddressIndexVolume`](#addressindexvolume)s.
 If the index is updated to include newer data as the chain progresses,
 a new manifest is generated to reflect the contents of the index.
 
@@ -385,10 +385,10 @@ The manifest includes:
 - The [schemas](#indexspecificationschemas) resource link.
 - The [publish_as_topic](#indexpublishingidentifier) identifier.
 - The [network](#networkName)
-- The [latest_subset_identifier](#subsetidentifier) of the highest (latest) completed [subset](#addressindexsubset).
-- The [division_metadata](#manifestdivision) which each contain the hashes of the subset.
-  - The elements in the division metadata vector are sorted lexicographically by their
-identifier (`ManifestDivision.identifier`) field.
+- The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed [volume](#addressindexvolume).
+- The [chapter_metadata](#manifestchapter) which each contain the hashes of the volume.
+  - The elements in the chapter metadata vector are sorted lexicographically by their
+identifier (`ManifestChapter.identifier`) field.
 
 ```python
 class IndexManifest(Containr):
@@ -396,8 +396,8 @@ class IndexManifest(Containr):
     schemas: IndexSpecificationSchemas
     publish_as_topic: IndexPublishingIdentifier
     network: NetworkName
-    latest_subset_identifier: SubsetIdentifier
-    division_metadata: Vector[ManifestDivision, NUM_DIVISIONS]
+    latest_volume_identifier: VolumeIdentifier
+    chapter_metadata: Vector[ManifestChapter, NUM_CHAPTERS]
 ```
 
 ### Informative (not required to use the index)
@@ -407,37 +407,37 @@ to in subsequent sections. No SSZ serialization/deserialization is performed on 
 
 Use of the index or manifest does not require implementation of these containers.
 
-#### `AddressDivision`
+#### `AddressChapter`
 
 This is the functional unit that a user acquires from a peer.
-A collection of data for similar addresses. A division contains serialized and compressed
-[subsets](#addressindexsubset) that cover discrete block ranges of transaction data (one
-subset for every `BLOCK_RANGE` blocks).
+A collection of data for similar addresses. A chapter contains serialized and compressed
+[volumes](#addressindexvolume) that cover discrete block ranges of transaction data (one
+volume for every `BLOCK_RANGE` blocks).
 
 Total members is calculated by latest block height divided by `BLOCK_RANGE_WIDTH`.
 
 The elements in the members list are sorted lexicographically by their
-oldest block (`AddressIndexSubset.range.old`) field.
+oldest block (`AddressIndexVolume.range.old`) field.
 
 ```python
-class AddressDivision(Container):
-    identifier: DivisionIdentifier
-    members: List[AddressIndexSubset, MAX_RANGES]
+class AddressChapter(Container):
+    identifier: ChapterIdentifier
+    members: List[AddressIndexVolume, MAX_RANGES]
 ```
 
 #### `AddressAppearanceIndex`
 
-The entire address-appearance-index, divided into [`AddressDivision`](#addressdivision)s that
-contain block [`AddressIndexSubset`](#addressindexsubset)s,
+The entire address-appearance-index, divided into [`AddressChapter`](#addresschapter)s that
+contain block [`AddressIndexVolume`](#addressindexvolume)s,
 ultimately containing transaction identifiers as [`AppearanceTx`](#appearancetx)s.
-The index is divided into `NUM_DIVISIONS` functional units.
+The index is divided into `NUM_CHAPTERS` functional units.
 
 The index is a derivative of the Unchained Index, and contains the same data, reorganised
 for a different purpose.
 
 ```python
 class AddressAppearanceIndex(Container):
-    divisions: Vector[AddressDivision, NUM_DIVISIONS]
+    chapters: Vector[AddressChapter, NUM_CHAPTERS]
 ```
 
 ## Definitions and aliases
@@ -447,19 +447,19 @@ The following terms may be used in subsequent descriptions.
 *Address*: An identifier used for wallets and accounts in Ethereum. Is a byte vector
 of length `DEFAULT_BYTES_PER_ADDRESS`. Usually displayed in hexadecimal representation.
 
-*Division*: See [`AddressDivision`](#addressdivision).
+*Chapter*: See [`AddressChapter`](#addresschapter).
 
-*Division identifier*: The hexadecimal characters that is common to all addresses in an
-[`AddressDivision`](#addressdivision). E.g., `0xa3`.
+*Chapter identifier*: The hexadecimal characters that is common to all addresses in an
+[`AddressChapter`](#addresschapter). E.g., `0xa3`.
 
 *Manifest*: The [`IndexManifest`](#indexmanifest) that contains metadata about a particular
 instantiation of the index. Useful for obtaining and checking the index data.
 
-*Subset*: See [`AddressIndexSubset`](#addressindexsubset).
+*Volume*: See [`AddressIndexVolume`](#addressindexvolume).
 
-*Subset identifier*: The block height of the oldest block in a
-[`AddressIndexSubset`](#addressindexsubset).
-E.g., subset `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive.
+*Volume identifier*: The block height of the oldest block in a
+[`AddressIndexVolume`](#addressindexvolume).
+E.g., volume `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive.
 
 *Similar address*: Two addresses are similar if they share their first characters in hexadecimal
 representation to a depth of `ADDRESS_CHARS_SIMILARITY_DEPTH`.
@@ -481,7 +481,7 @@ A entity that has the ability to create or distribute the full index.
 
 #### Agent type: User
 
-A entity that has a part of the index (such as one or more [division](#addressdivision)s).
+A entity that has a part of the index (such as one or more [chapter](#addresschapter)s).
 
 ### Service assumed from the data layer
 
@@ -510,7 +510,7 @@ Descriptions of components of the index.
 ### Data architecture description
 
 - Address group.
-- Block range division.
+- Block range chapter.
 - Serialization.
 - Compression.
 
@@ -532,26 +532,26 @@ Regular expression: "/^address_appearance_index_+[a-z]$/"
 Example directory: ./address_appearance_index_mainnet/
 ```
 ---
-Directory representing a [division](#addressdivision), named using the
-[division identifier](#divisionidentifier), where:
+Directory representing a [chapter](#addresschapter), named using the
+[chapter identifier](#chapteridentifier), where:
 
-- "DIVISION_DESCRIPTOR" is the hexadecimal string representation of the
-[division identifier](#divisionidentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+- "CHAPTER_DESCRIPTOR" is the hexadecimal string representation of the
+[chapter identifier](#chapteridentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
 ```sh
-Format: division_0x{DIVISION_DESCRIPTOR}
+Format: chapter_0x{CHAPTER_DESCRIPTOR}
 
-Regular expression: "/^division_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
+Regular expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
 
-Example directory: ./division_Ox4e/
+Example directory: ./chapter_Ox4e/
 ```
 ---
-File representing a [subset](#addressindexsubset), named using the
-[subset identifier](#subsetidentifier), with components:
+File representing a [volume](#addressindexvolume), named using the
+[volume identifier](#volumeidentifier), with components:
 
-- "DIVISION_DESCRIPTOR"
-  - The hexadecimal string representation of the [division identifier](#divisionidentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
-- "SUBSET_DESCRIPTOR"
-  - The decimal string representation of the [subset identifier](#subsetidentifier).
+- "CHAPTER_DESCRIPTOR"
+  - The hexadecimal string representation of the [chapter identifier](#chapteridentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+- "VOLUME_DESCRIPTOR"
+  - The decimal string representation of the [volume identifier](#volumeidentifier).
   - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters. Block `14_500_000` is shown in the example.
 - "ENCODING", which may be one of two choices:
   - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
@@ -559,12 +559,12 @@ File representing a [subset](#addressindexsubset), named using the
   encoding with [snappy](#snappy). This format is preferred for network transmission.
 
 ```sh
-Format: division_0x{DIVISION_DESCRIPTOR}_subset_{SUBSET_DESCRIPTOR}.{ENCODING}
+Format: chapter_0x{CHAPTER_DESCRIPTOR}_volume_{VOLUME_DESCRIPTOR}.{ENCODING}
 
-Regular Expression: "/^division_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_subset(_[a-z0-9]{3}){3}.ssz(_snappy)?$/"
+Regular Expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_volume(_[a-z0-9]{3}){3}.ssz(_snappy)?$/"
 
-Example file: ./division_0x4e_subset_014_500_000.ssz
-Example file: ./division_0x4e_subset_014_500_000.ssz_snappy
+Example file: ./chapter_0x4e_volume_014_500_000.ssz
+Example file: ./chapter_0x4e_volume_014_500_000.ssz_snappy
 ```
 ---
 File representing a [manifest](#indexmanifest). The file name contains the
@@ -593,14 +593,14 @@ Example of a suggested complete index folder structure:
 - ./address_appearance_index_mainnet/
     - manifest_v_00_01_00.ssz_snappy
     - ...
-    - /division_Ox4e/
+    - /chapter_Ox4e/
         - ...
-        - /division_0x4e_subset_014_500_000.ssz_snappy
-        - /division_0x4e_subset_014_600_000.ssz_snappy
+        - /chapter_0x4e_volume_014_500_000.ssz_snappy
+        - /chapter_0x4e_volume_014_600_000.ssz_snappy
         - ...
-    - /division_Ox4f/
+    - /chapter_Ox4f/
         - ...
-        - /division_0x4e_subset_014_500_000.ssz_snappy
+        - /chapter_0x4e_volume_014_500_000.ssz_snappy
         - ...
     - ...
 ```
@@ -610,9 +610,9 @@ The estimated file count for a complete index on a network at a certain block he
 be calculated as follows:
 ```python
 def estimate_file_count(block_height):
-  division_directories = NUM_DIVISIONS
-  subset_files_per_directory = block_height // BLOCK_RANGE_WIDTH
-  file_count = division_directories * subset_files_per_directory
+  chapter_directories = NUM_CHAPTERS
+  volume_files_per_directory = block_height // BLOCK_RANGE_WIDTH
+  file_count = chapter_directories * volume_files_per_directory
   return file_count
 
 print(estimate_file_count(15_400_000))
@@ -643,13 +643,13 @@ Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
 
 ### Maintenance: Creation
 
-- Index: for each appearance, store under the relevant division -> subset -> address.
-- Manifest: Save specification version and decide manifest version then for each subset file, hash and append to file.
+- Index: for each appearance, store under the relevant chapter -> volume -> address.
+- Manifest: Save specification version and decide manifest version then for each volume file, hash and append to file.
 
 ### Maintenance: Extension
 
-- Index: for each new appearance, store under the relevant division -> subset -> address.
-- Manifest: Save specification version and increment manifest version then for each subset file, hash and append to file.
+- Index: for each new appearance, store under the relevant chapter -> volume -> address.
+- Manifest: Save specification version and increment manifest version then for each volume file, hash and append to file.
 
 ### Maintenance: Correctness audit
 
@@ -658,15 +658,15 @@ Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
 
 ### User: Find transactions
 
-- For a given address go through each subset file and look up the trasaction information for
+- For a given address go through each volume file and look up the trasaction information for
 each appearance. Use transaction information to request transaction data from other services
 (portal network peer)
 
 ### User: Check completeness
 
-- Obtain a manifest from a peer. For each subset file, compute the root tree hash and verify
-it matches the record in the manifest. Check that there are no missing subset files for the
-given division.
+- Obtain a manifest from a peer. For each volume file, compute the root tree hash and verify
+it matches the record in the manifest. Check that there are no missing volume files for the
+given chapter.
 
 ## Design principles
 
