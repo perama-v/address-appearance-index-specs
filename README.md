@@ -31,10 +31,10 @@ Table of contents
     - [Data (required to use the index data)](#data-required-to-use-the-index-data)
       - [`AppearanceTx`](#appearancetx)
       - [`AddressAppearances`](#addressappearances)
-      - [`AddressIndexVolume`](#addressindexvolume)
+      - [`AddressIndexVolumeChapter`](#addressindexvolumechapter)
     - [Metadata (required to use the index manifest)](#metadata-required-to-use-the-index-manifest)
       - [`VolumeIdentifier`](#volumeidentifier)
-      - [`ManifestVolume`](#manifestvolume)
+      - [`ManifestVolumeChapter`](#manifestvolume)
       - [`ChapterIdentifier`](#chapteridentifier)
       - [`ManifestChapter`](#manifestchapter)
       - [`NetworkName`](#networkname)
@@ -142,7 +142,7 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | Name | Value | Description |
 | - | - | - |
 | `ADDRESS_CHARS_SIMILARITY_DEPTH` | `uint32(2)` | A parameter for the number of identical characters that two similar addresses share in hexadecimal representation. If the value is `2`, address`0xa350...9c45` will be evaluated for similarity using the characters `0xa3`. |
-| `BLOCK_RANGE_WIDTH` | `uint32(10*5)` (=100_000) | Number of blocks in a address index volume. Index maintenance operates at this cadence (~2 weeks) |
+| `BLOCKS_PER_VOLUME` | `uint32(10*5)` (=100_000) | Number of blocks in a address index volume. Index maintenance operates at this cadence (~2 weeks) |
 
 ### Fixed-size type parameters
 
@@ -154,15 +154,17 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 | `MAX_SCHEMAS_RESOURCE_BYTES` | `uint32(2**7)` (=128) |  Maximum number of bytes available to represent the ASCII-encoded string that refers to this specification. |
 | `MAX_PUBLISH_ID_BYTES` | `uint32(2**6)` (=64) | Maximum number of bytes available to represent the ASCII-encoded string to publishing the manifest under. |
 
+
 ### Variable-size type parameters
 
 Helper values for SSZ operations. SSZ variable-size elements require a maximum length field.
 
 | Name | Value | Description |
 | - | - | - |
-| `MAX_ADDRESSES_PER_BLOCK_RANGE` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of addresses plausible in `BLOCK_RANGE_WIDTH` blocks. Not rigorous. |
-| `MAX_TXS_PER_BLOCK_RANGE` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of transactions plausible in `BLOCK_RANGE_WIDTH` blocks. Not rigorous. |
-| `MAX_RANGES` | `uint32(2**16)` (=65_536) | Chosen as practical ceiling for number of ranges plausible in `BLOCK_RANGE_WIDTH`. |
+| `MAX_ADDRESSES_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of addresses plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
+| `MAX_TXS_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of transactions plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
+| `MAX_VOLUMES` | `uint32(2**16)` (=65_536) | Chosen as practical ceiling for number of volumes if volumes containing `BLOCKS_PER_VOLUME`. |
+| `MAX_BYTES_PER_CID` |  `uint32(2**7)` (=128) | Number of bytes an IPFS CID may use (CIDv1 has variable length) |
 
 ### Derived
 
@@ -180,7 +182,7 @@ important for serialization/deserialization.
 
 ### Data (required to use the index data)
 
-The `AddressIndexVolume` is the main container in this section and is
+The `AddressIndexVolumeChapter` is the main container in this section and is
 subject to SSZ serialization/deserialization to create/access the index data.
 
 The remaining containers are components of that container.
@@ -201,7 +203,7 @@ class AppearanceTx(Container):
 #### `AddressAppearances`
 
 This unit holds transactions for a single address. All transactions are from blocks
-within the range defined in the parent AddressIndexVolume.
+within the range defined in the parent AddressIndexVolumeChapter.
 
 The elements in the appearances list are sorted lexicographically first by their block
 (`AppearanceTx.block`) field, and then by their index (`AppearanceTx.index`) field
@@ -209,11 +211,11 @@ The elements in the appearances list are sorted lexicographically first by their
 
 ```python
 class AddressAppearances(Container):
-    address: Vector[byte, DEFAULT_BYTES_PER_ADDRESS]
-    appearances: List[AppearanceTx, MAX_TXS_PER_BLOCK_RANGE]
+    address: ByteVector[DEFAULT_BYTES_PER_ADDRESS]
+    appearances: List[AppearanceTx, MAX_TXS_PER_VOLUME]
 ```
 
-#### `AddressIndexVolume`
+#### `AddressIndexVolumeChapter`
 
 Many of these units form a functional unit for a user.
 It is the unit that is subject to SSZ serialization then compression
@@ -227,17 +229,17 @@ The elements in the addresses list are sorted lexicographically by their address
 
 Components:
 - `address_prefix`. The byte representation of the common characters that the addresses
-all start with. Defined by the parent [`chapter`](#addresschapter) and inclueded here for
+all start with. Defined by the parent [`chapter`](#addresschapter) and included here for
 clarity.
 - `identifier`. The [volume identifier](#volumeidentifier) that defines which blocks the volume
 includes.
 - `addresses`. Contains transaction data for addresses.
 
 ```python
-class AddressIndexVolume(Container):
+class AddressIndexVolumeChapter(Container):
     address_prefix: ByteVector[NUM_COMMON_BYTES]
     identifier: VolumeIdentifier
-    addresses: List[AddressAppearances, MAX_ADDRESSES_PER_BLOCK_RANGE]
+    addresses: List[AddressAppearances, MAX_ADDRESSES_PER_VOLUME]
 ```
 
 ### Metadata (required to use the index manifest)
@@ -250,15 +252,15 @@ Use of the index manifest requires implementation of these containers.
 
 #### `VolumeIdentifier`
 
-Used to refer to a particular [volume](#addressindexvolume).
+Used to refer to a particular [volume](#addressindexvolumechapter).
 The identifier is used in the [manifest](#manifest) and in the
 [naming conventions](#string-naming-conventions) for index files.
 
 Components:
-- `oldest_block` defines the oldest block that a [volume](#addressindexvolume] includes.
-  - Volumes represent `BLOCK_RANGE_WIDTH` blocks, therefore the inclusive range is
-  `[oldest_block, oldest_block + BLOCK_RANGE_WIDTH - 1]`.
-  - E.g., a volume identifier with `oldest_block=15_300_000` and `BLOCK_RANGE_WIDTH=100_000` then
+- `oldest_block` defines the oldest block that a [volume](#addressindexvolumechapter] includes.
+  - Volumes represent `BLOCKS_PER_VOLUME` blocks, therefore the inclusive range is
+  `[oldest_block, oldest_block + BLOCKS_PER_VOLUME - 1]`.
+  - E.g., a volume identifier with `oldest_block=15_300_000` and `BLOCKS_PER_VOLUME=100_000` then
   blocks included are `[15_300_000, 15_399_999]`.
 
 ```python
@@ -266,18 +268,24 @@ class VolumeIdentifier(Conainer):
     oldest_block: uint32
 ```
 
-#### `ManifestVolume`
+#### `ManifestVolumeChapter`
 
-Used to create the index [manifest](#manifest). This unit represents a store for the hash of a single
-[`AddressIndexVolume`](#addressindexvolume). The hash is the tree root hash,
+Used to create the index [manifest](#manifest). This unit represents a store for
+the hash of a single
+[`AddressIndexVolumeChapter`](#addressindexvolumechapter).
+
+Components:
+- `identifier`, the [VolumeIdentifier](#volumeidentifier) that refers to a particular volume.
+- `ipfs_cid`, the byte representation of an Interplanetary File System (IPFS) Content Identifier (CID). This CID may be either v0 or V1.
+- The hash is the tree root hash,
 as defined in the [ssz spec](#ssz-spec).
 
-A single volume may be referred to by it's [identifier](#volumeidentifier).
 
 ```python
-class ManifestVolume(Container):
+class ManifestVolumeChapter(Container):
     identifier: VolumeIdentifier
-    tree_root_hash: uint256
+    ipfs_cid: List[byte, MAX_BYTES_PER_CID]
+    hash_tree_root: uint256
 ```
 
 #### `ChapterIdentifier`
@@ -306,12 +314,12 @@ This unit stores the [volume metadata](#manifestvolume) for a single
 [`AddressChapter`](#addresschapter) with a given [identifier](#chapteridentifier).
 
 The elements in the `volume_metadata` list are sorted lexicographically by their
-identifier (`ManifestVolume.identifier`) field.
+identifier (`ManifestVolumeChapter.identifier`) field.
 
 ```python
 class ManifestChapter(Container):
     identifier: ChapterIdentifier
-    volume_metadata: List[ManifestVolume, MAX_RANGES]
+    volume_metadata: List[ManifestVolumeChapter, MAX_VOLUMES]
 ```
 
 #### `NetworkName`
@@ -321,7 +329,7 @@ is represented as an ASCII-encoded byte vector with maximum length `MAX_NETWORK_
 
 ```python
 class NetworkName(Container):
-    name: VariableList[uint8, MAX_NETWORK_NAME_BYTES]
+    name: List[uint8, MAX_NETWORK_NAME_BYTES]
 ```
 
 #### `IndexSpecificationVersion`
@@ -356,7 +364,7 @@ The byte ASCII-encoded string has a maximum byte length of `MAX_SCHEMAS_RESOURCE
 
 ```python
 class IndexSpecificationSchemas(Container):
-    resource: VariableList[uint8, MAX_SCHEMAS_RESOURCE_BYTES]
+    resource: List[uint8, MAX_SCHEMAS_RESOURCE_BYTES]
 ```
 
 #### `IndexPublishingIdentifier`
@@ -371,14 +379,14 @@ ASCII-decoded `NetworkName`. For example "address_appearance_index_mainnet".
 
 ```python
 class IndexPublishingIdentifier(Container):
-    topic: VariableList[uint8, MAX_PUBLISH_ID_BYTES]
+    topic: List[uint8, MAX_PUBLISH_ID_BYTES]
 ```
 
 #### `IndexManifest`
 
 This is a container that represents a file containing metadata about the index.
 It is a record of the components of a specific instantiation of the index.
-The manifest keeps the hash of all [`AddressIndexVolume`](#addressindexvolume)s.
+The manifest keeps the hash of all [`AddressIndexVolumeChapter`](#addressindexvolumechapter)s.
 If the index is updated to include newer data as the chain progresses,
 a new manifest is generated to reflect the contents of the index.
 
@@ -387,7 +395,7 @@ The manifest includes:
 - The [schemas](#indexspecificationschemas) resource link.
 - The [publish_as_topic](#indexpublishingidentifier) identifier.
 - The [network](#networkname)
-- The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed [volume](#addressindexvolume).
+- The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed [volume](#addressindexvolumechapter).
 - The [chapter_metadata](#manifestchapter) which each contain the hashes of the volume.
   - The elements in the chapter metadata vector are sorted lexicographically by their
 identifier (`ManifestChapter.identifier`) field.
@@ -411,26 +419,26 @@ Use of the index or manifest does not require implementation of these containers
 
 #### `AddressChapter`
 
-This is the functional unit that a user acquires from a peer.
-A collection of data for similar addresses. A chapter contains serialized and compressed
-[volumes](#addressindexvolume) that cover discrete block ranges of transaction data (one
-volume for every `BLOCK_RANGE` blocks).
+This represents the functional collection that a user acquires from a peer.
+It consists of data for similar addresses. A chapter contains serialized and compressed
+[chapters from many volumes](#addressindexvolumechapter) that cover discrete block ranges of transaction data (one
+volume for every `BLOCKS_PER_VOLUME` blocks).
 
-Total members is calculated by latest block height divided by `BLOCK_RANGE_WIDTH`.
+Total members is calculated by latest block height divided by `BLOCKS_PER_VOLUME`.
 
 The elements in the members list are sorted lexicographically by their
-oldest block (`AddressIndexVolume.range.old`) field.
+oldest block (`AddressIndexVolumeChapter.range.old`) field.
 
 ```python
 class AddressChapter(Container):
     identifier: ChapterIdentifier
-    members: List[AddressIndexVolume, MAX_RANGES]
+    members: List[AddressIndexVolumeChapter, MAX_VOLUMES]
 ```
 
 #### `AddressAppearanceIndex`
 
 The entire address-appearance-index, divided into [`AddressChapter`](#addresschapter)s that
-contain block [`AddressIndexVolume`](#addressindexvolume)s,
+contain block [`AddressIndexVolumeChapter`](#addressindexvolumechapter)s,
 ultimately containing transaction identifiers as [`AppearanceTx`](#appearancetx)s.
 The index is divided into `NUM_CHAPTERS` functional units.
 
@@ -457,10 +465,10 @@ of length `DEFAULT_BYTES_PER_ADDRESS`. Usually displayed in hexadecimal represen
 *Manifest*: The [`IndexManifest`](#indexmanifest) that contains metadata about a particular
 instantiation of the index. Useful for obtaining and checking the index data.
 
-*Volume*: See [`AddressIndexVolume`](#addressindexvolume).
+*Volume*: See [`AddressIndexVolumeChapter`](#addressindexvolumechapter).
 
 *Volume identifier*: The block height of the oldest block in a
-[`AddressIndexVolume`](#addressindexvolume).
+[`AddressIndexVolumeChapter`](#addressindexvolumechapter).
 E.g., volume `13_000_000` contains blocks `13_000_000` to `13_099_999` inclusive.
 
 *Similar address*: Two addresses are similar if they share their first characters in hexadecimal
@@ -511,8 +519,8 @@ Descriptions of components of the index.
 
 ### Data architecture description
 
-- Address group.
-- Block range chapter.
+- Volumes.
+- Chapters.
 - Serialization.
 - Compression.
 
@@ -547,7 +555,7 @@ Regular expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
 Example directory: ./chapter_Ox4e/
 ```
 ---
-File representing a [volume](#addressindexvolume), named using the
+File representing a [volume](#addressindexvolumechapter), named using the
 [volume identifier](#volumeidentifier), with components:
 
 - "CHAPTER_DESCRIPTOR"
@@ -608,7 +616,7 @@ be calculated as follows:
 ```python
 def estimate_file_count(block_height):
   chapter_directories = NUM_CHAPTERS
-  volume_files_per_directory = block_height // BLOCK_RANGE_WIDTH
+  volume_files_per_directory = block_height // BLOCKS_PER_VOLUME
   file_count = chapter_directories * volume_files_per_directory
   return file_count
 
