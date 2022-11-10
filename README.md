@@ -353,13 +353,13 @@ Used to create the index [manifest](#manifest).
 This unit stores the [volume metadata](#manifestvolume) for a single
 [`AddressChapter`](#addresschapter) with a given [identifier](#chapteridentifier).
 
-The elements in the `volume_metadata` list are sorted lexicographically by their
+The elements in the `volume_chapter_metadata` list are sorted lexicographically by their
 identifier (`ManifestVolumeChapter.identifier`) field.
 
 ```python
 class ManifestChapter(Container):
     identifier: ChapterIdentifier
-    volume_metadata: List[ManifestVolumeChapter, MAX_VOLUMES]
+    volume_chapter_metadata: List[ManifestVolumeChapter, MAX_VOLUMES]
 ```
 
 #### `NetworkName`
