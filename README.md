@@ -117,25 +117,6 @@ database architecture ([ERC-Time-Ordered-Distributable-Dabase](#erc-time-ordered
 
 The index structure definition begins at [`AddressAppearanceIndex`](#addressappearanceindex).
 
-## Scope
-
-- Index architecture:
-    - Data
-        - Address chapters
-        - address index volumes
-        - Serialization
-        - Compression
-    - Manifest
-        - Specification version
-        - Unchained Index version
-        - Latest block height
-- Procedures:
-    - Maintenance: Creation
-    - Maintenance: Extension
-    - Maintenance: Correctness audit
-    - User: Find transactions
-    - User: Check completeness
-
 ## Notation
 
 Code snippets appearing in `this style` are to be interpreted as Python 3 psuedocode. The
