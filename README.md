@@ -57,7 +57,6 @@ Table of contents
     - [Service assumed from the network layer](#service-assumed-from-the-network-layer)
     - [Functions of the index](#functions-of-the-index)
   - [Index architecture](#index-architecture)
-    - [Data architecture description](#data-architecture-description)
       - [Estimated file count](#estimated-file-count)
     - [Manifest architecture description](#manifest-architecture-description)
   - [Interface identifier string schemas](#interface-identifier-string-schemas)
@@ -77,9 +76,44 @@ Table of contents
     - [User: Find transactions](#user-find-transactions)
     - [User: Check completeness](#user-check-completeness)
   - [Design principles](#design-principles)
+
 <!-- END doctoc -->
 
 ## Introduction
+
+The [Ethereum](#ethereum) protocol may change to allow nodes
+not to store some parts of history ("[history expiry](#eip-4444)"). In
+this paradigm, history is intended to exist distributed among peers in
+a dedicated networkm such as the [Portal Network](#portal-network).
+
+This is beneficial because it allows users to participate with
+lower hard drive requirements, increasing the potential user base.
+
+One challenge is that a user does not immediately know what
+data they should acquire from peers. This is because it is not
+trivial to know what transactions an address has appeared.
+The [Unchained Index](#unchained-index) is a solution to this
+problem. It involves users with tracing archive nodes periodically
+scraping the tip of the chain using [trueblock-core](#trueblocks-core).
+
+However, the Unchained Index is not optimised for super-light-weight
+devices because the bloom filters alone are ~3GB.
+
+This specification is for an index
+(the address-appearance-index) that is divided into pieces. Pieces
+are designed to be clearly useful or not useful to the end user,
+who has an address that they are interested in. By consulting
+a manifest, they can quickly navigate which parts of the index
+to obtain, resulting in low small hard drive requirements.
+
+The index is derived from Unchained Index, and leverages
+it for a new user class. It is hoped that this will
+increase and awareness and support for the underlying tools and
+ecosystem.
+
+This specification is a specific instantiation of a more general
+database architecture ([ERC-Time-Ordered-Distributable-Dabase](#erc-time-ordered-distributable-database)) and coordination mechanism
+([ERC-Generic-Attributable-Manifest-Broadcaster](#erc-generic-attributable-manifest-broadcaster)).
 
 The index structure definition begins at [`AddressAppearanceIndex`](#addressappearanceindex).
 
@@ -516,14 +550,13 @@ A entity that has the ability to create or distribute the full index.
 
 #### Agent type: User
 
-A entity that has a part of the index (such as one or more [chapter](#addresschapter)s).
+A entity that has a part of the index (such as one or more [chapters](#addresschapter)).
 
 ### Service assumed from the data layer
 
 The following are assumed to be available from external systems.
 
-- A complete index of appearances of all address for all transactions in the network.
-  - Unchained Index, either
+- A complete index of appearances of all address for all transactions in the network in the form of the Unchained Index, either:
     - Obtained from peers (IPFS)
     - Constructed from local node, using:
       - A node that can execute all transaction traces.
@@ -531,23 +564,25 @@ The following are assumed to be available from external systems.
 
 ### Service assumed from the network layer
 
-- Providers of the address-appearance-index
-  - Peers in peer-to-peer network
+- Provision of the address-appearance-index to end-users by peers in a
+peer-to-peer network, such as:
     - Portal network
-- Users of the address-appearance-index
-
-### Functions of the index
+    - IPFS
 
 ## Index architecture
 
-Descriptions of components of the index.
+The index is designed to be [ERC-TODD](#erc-time-ordered-distributable-database)-compliant.
+It breaks data into:
 
-### Data architecture description
+- Volumes that may be constructed at a cadence defined by `BLOCKS_PER_VOLUME`. Practically,
+this means that every two weeks, the chain transactions may be traced to build an
+index mapping address to transactions.
+- Chapters that are defined as having only data for address that share leading
+hex characters. Practically, this means that all addresses starting with "0xbe" will
+be in the same chapter, which allows a user to obtain 1/256th of the index.
 
-- Volumes.
-- Chapters.
-- Serialization.
-- Compression.
+The smallest unit in the index is a Chapter of a Volume. They are [ssz-serialized](#ssz-spec)
+and [snappy-encoded](#snappy), and able to be shared using [IPFS CIDs](#ipfs-cid) or through peer to peer networks.
 
 #### Estimated file count
 
@@ -565,18 +600,27 @@ print(estimate_file_count(15_400_000))
 ```
 ### Manifest architecture description
 
-The manifest is a file that serves as a reference for users to maintain up to date data. It
-contains the [index manifest](#indexmanifest) data encoded with
-[SSZ](#ssz-spec) serialization followed by encoding with [snappy](#snappy). It contains:
-
-- Specification version
-- Manifest version
-- Lists of files and their hashes.
+The manifest is a file that serves as a reference for users to maintain up to date data.
+It contains the [index manifest](#indexmanifest) data in JavaScript Object Notation (JSON) format.
 
 The manifest is produced by maintenance [creation](#maintenance-creation) and
 [extension](#maintenance-extension) procedures and utilised during user
-[check completeness](#user-check-completeness). This enables a user to efficiently determine
-the the nature of any pieces of the index that they require from a third party.
+[check completeness](#user-check-completeness). This enables a user to efficiently determine the the nature of any pieces of the index that they require from a third party.
+
+The purpose of the components are as follows:
+
+- The [version](#indexspecificationversion) allows reasoning about spec/software breaking
+changes.
+- The [schemas](#indexspecificationschemas) is an identifier used to obtain the
+specification, which is required to read index data.
+- The [publish_as_topic](#indexpublishingidentifier) is a coordination tool allowing
+a publisher and a consumer to interact indirectly and asynchronously.
+- The [network](#networkname) allows different block chains, such as L2s and testnets
+to be represented using this specification.
+- The [latest_volume_identifier](#volumeidentifier) allows quick determination of
+what the most recent data is included in the manifest.
+- The [chapter_metadata](#manifestchapter) is a comprehensive collection of links
+to all individual parts of the data.
 
 
 ## Interface identifier string schemas
@@ -747,13 +791,15 @@ Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
 
 ### Maintenance: Creation
 
-- Index: for each appearance, store under the relevant chapter -> volume -> address.
-- Manifest: Save specification version and decide manifest version then for each volume file, hash and append to file.
+- Index: For each appearance, store address and transaction id under the relevant
+volume and chapter.
+- Manifest: Create a new manifest file then for index file create content identifiers and append to the file along with additinal metadata
 
 ### Maintenance: Extension
 
-- Index: for each new appearance, store under the relevant chapter -> volume -> address.
-- Manifest: Save specification version and increment manifest version then for each volume file, hash and append to file.
+- Index: For each new appearance, store address and transaction id under the relevant
+volume and chapter.
+- Manifest: Create a new manifest file then for index file create content identifiers and append to the file along with additinal metadata.
 
 ### Maintenance: Correctness audit
 
