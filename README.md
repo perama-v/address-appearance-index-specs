@@ -112,7 +112,9 @@ increase and awareness and support for the underlying tools and
 ecosystem.
 
 This specification is a specific instantiation of a more general
-database architecture ([ERC-Time-Ordered-Distributable-Dabase](#erc-time-ordered-distributable-database)) and coordination mechanism
+database architecture
+([ERC-Time-Ordered-Distributable-Dabase](#erc-time-ordered-distributable-database))
+and coordination mechanism
 ([ERC-Generic-Attributable-Manifest-Broadcaster](#erc-generic-attributable-manifest-broadcaster)).
 
 The index structure definition begins at [`AddressAppearanceIndex`](#addressappearanceindex).
@@ -204,7 +206,7 @@ Helper values for SSZ operations. SSZ variable-size elements require a maximum l
 | `MAX_ADDRESSES_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of addresses plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
 | `MAX_TXS_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of transactions plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
 | `MAX_VOLUMES` | `uint32(2**16)` (=65_536) | Chosen as practical ceiling for number of volumes if volumes containing `BLOCKS_PER_VOLUME`. |
-| `MAX_BYTES_PER_CID` |  `uint32(2**7)` (=128) | Number of bytes an IPFS CID may use (CIDv1 has variable length) |
+| `MAX_BYTES_PER_CID` |  `uint32(2**5)` (=32) | Number of bytes an IPFS CIDv0 uses. |
 
 ### Derived
 
@@ -316,15 +318,13 @@ the hash of a single
 
 Components:
 - `identifier`, the [VolumeIdentifier](#volumeidentifier) that refers to a particular volume.
-- `ipfs_cid`, the byte representation of an Interplanetary File System (IPFS) Content Identifier (CID). This CID may be either v0 or V1.
-- The hash is the tree root hash,
-as defined in the [ssz spec](#ssz-spec).
-
+- `ipfs_cid`, the Interplanetary File System (IPFS) Content Identifier (CID) v0.
+- The hash is the tree root hash, as defined in the [ssz spec](#ssz-spec).
 
 ```python
 class ManifestVolumeChapter(Container):
     identifier: VolumeIdentifier
-    ipfs_cid: List[byte, MAX_BYTES_PER_CID]
+    ipfs_cid: uint256
     hash_tree_root: uint256
 ```
 
@@ -435,7 +435,8 @@ The manifest includes:
 - The [schemas](#indexspecificationschemas) resource link.
 - The [publish_as_topic](#indexpublishingidentifier) identifier.
 - The [network](#networkname)
-- The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed [volume](#addressindexvolumechapter).
+- The [latest_volume_identifier](#volumeidentifier) of the highest (latest) completed
+[volume](#addressindexvolumechapter).
 - The [chapter_metadata](#manifestchapter) which each contain the hashes of the volume.
   - The elements in the chapter metadata vector are sorted lexicographically by their
 identifier (`ManifestChapter.identifier`) field.
@@ -461,7 +462,8 @@ Use of the index or manifest does not require implementation of these containers
 
 This represents the functional collection that a user acquires from a peer.
 It consists of data for similar addresses. A chapter contains serialized and compressed
-[chapters from many volumes](#addressindexvolumechapter) that cover discrete block ranges of transaction data (one
+[chapters from many volumes](#addressindexvolumechapter) that cover discrete block ranges of
+transaction data (one
 volume for every `BLOCKS_PER_VOLUME` blocks).
 
 Total members is calculated by latest block height divided by `BLOCKS_PER_VOLUME`.
@@ -537,7 +539,8 @@ A entity that has a part of the index (such as one or more [chapters](#addressch
 
 The following are assumed to be available from external systems.
 
-- A complete index of appearances of all address for all transactions in the network in the form of the Unchained Index, either:
+- A complete index of appearances of all address for all transactions in the network in the form of
+the Unchained Index, either:
     - Obtained from peers (IPFS)
     - Constructed from local node, using:
       - A node that can execute all transaction traces.
@@ -563,7 +566,8 @@ hex characters. Practically, this means that all addresses starting with "0xbe" 
 be in the same chapter, which allows a user to obtain 1/256th of the index.
 
 The smallest unit in the index is a Chapter of a Volume. They are [ssz-serialized](#ssz-spec)
-and [snappy-encoded](#snappy), and able to be shared using [IPFS CIDs](#ipfs-cid) or through peer to peer networks.
+and [snappy-encoded](#snappy), and able to be shared using [IPFS CIDs](#ipfs-cid) or through peer
+to peer networks.
 
 #### Estimated file count
 
@@ -586,7 +590,8 @@ It contains the [index manifest](#indexmanifest) data in JavaScript Object Notat
 
 The manifest is produced by maintenance [creation](#maintenance-creation) and
 [extension](#maintenance-extension) procedures and utilised during user
-[check completeness](#user-check-completeness). This enables a user to efficiently determine the the nature of any pieces of the index that they require from a third party.
+[check completeness](#user-check-completeness). This enables a user to efficiently determine the
+the nature of any pieces of the index that they require from a third party.
 
 The purpose of the components are as follows:
 
@@ -690,14 +695,17 @@ Example directory: ./address_appearance_index_mainnet/
 
 ### Individual file name
 
-File representing a [chapter](#addresschapter) of a [volume](#addressindexvolumechapter), named using the [chapter identifier](#chapteridentifier) and
+File representing a [chapter](#addresschapter) of a [volume](#addressindexvolumechapter), named
+using the [chapter identifier](#chapteridentifier) and
 [volume identifier](#volumeidentifier), with components:
 
 - "CHAPTER_DESCRIPTOR"
-  - The hexadecimal string representation of the [chapter identifier](#chapteridentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+  - The hexadecimal string representation of the [chapter identifier](#chapteridentifier), that
+  has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
 - "VOLUME_DESCRIPTOR"
   - The decimal string representation of the [volume identifier](#volumeidentifier).
-  - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters. Block `14_500_000` is shown in the example.
+  - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters.
+  Block `14_500_000` is shown in the example.
 - "ENCODING", which may be one of two choices:
   - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
   - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
@@ -774,13 +782,15 @@ Descriptions of actions that agents ([maintainer](#agent-type-maintainer) or
 
 - Index: For each appearance, store address and transaction id under the relevant
 volume and chapter.
-- Manifest: Create a new manifest file then for index file create content identifiers and append to the file along with additinal metadata
+- Manifest: Create a new manifest file then for index file create content identifiers and append to
+the file along with additinal metadata
 
 ### Maintenance: Extension
 
 - Index: For each new appearance, store address and transaction id under the relevant
 volume and chapter.
-- Manifest: Create a new manifest file then for index file create content identifiers and append to the file along with additinal metadata.
+- Manifest: Create a new manifest file then for index file create content identifiers and append to
+the file along with additinal metadata.
 
 ### Maintenance: Correctness audit
 
