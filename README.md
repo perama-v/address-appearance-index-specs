@@ -22,6 +22,9 @@ Table of contents
     - [Unchained Index](#unchained-index)
     - [SSZ Spec](#ssz-spec)
     - [Snappy](#snappy)
+    - [IPFS CID](#ipfs-cid)
+    - [ERC-time-ordered-distributable-database](#erc-time-ordered-distributable-database)
+    - [ERC-generic-attributable-manifest-broadcaster](#erc-generic-attributable-manifest-broadcaster)
   - [Constants](#constants)
     - [Design parameters](#design-parameters)
     - [Fixed-size type parameters](#fixed-size-type-parameters)
@@ -34,10 +37,13 @@ Table of contents
       - [`AddressIndexVolumeChapter`](#addressindexvolumechapter)
     - [Metadata (required to use the index manifest)](#metadata-required-to-use-the-index-manifest)
       - [`VolumeIdentifier`](#volumeidentifier)
-      - [`ManifestVolumeChapter`](#manifestvolume)
+      - [`ManifestVolumeChapter`](#manifestvolumechapter)
       - [`ChapterIdentifier`](#chapteridentifier)
       - [`ManifestChapter`](#manifestchapter)
       - [`NetworkName`](#networkname)
+      - [`IndexSpecificationVersion`](#indexspecificationversion)
+      - [`IndexSpecificationSchemas`](#indexspecificationschemas)
+      - [`IndexPublishingIdentifier`](#indexpublishingidentifier)
       - [`IndexManifest`](#indexmanifest)
     - [Informative (not required to use the index)](#informative-not-required-to-use-the-index)
       - [`AddressChapter`](#addresschapter)
@@ -52,9 +58,18 @@ Table of contents
     - [Functions of the index](#functions-of-the-index)
   - [Index architecture](#index-architecture)
     - [Data architecture description](#data-architecture-description)
-      - [String naming conventions](#string-naming-conventions)
       - [Estimated file count](#estimated-file-count)
     - [Manifest architecture description](#manifest-architecture-description)
+  - [Interface identifier string schemas](#interface-identifier-string-schemas)
+    - [Database interface id](#database-interface-id)
+    - [Volume interface id](#volume-interface-id)
+    - [Chapter interface id](#chapter-interface-id)
+    - [Example interface](#example-interface)
+  - [File name schemas](#file-name-schemas)
+    - [Database file name](#database-file-name)
+    - [Individual file name](#individual-file-name)
+    - [Chapter directory name](#chapter-directory-name)
+    - [Manifest file name](#manifest-file-name)
   - [Procedures](#procedures)
     - [Maintenance: Creation](#maintenance-creation)
     - [Maintenance: Extension](#maintenance-extension)
@@ -62,8 +77,6 @@ Table of contents
     - [User: Find transactions](#user-find-transactions)
     - [User: Check completeness](#user-check-completeness)
   - [Design principles](#design-principles)
-  - [Versioning](#versioning)
-
 <!-- END doctoc -->
 
 ## Introduction
@@ -134,6 +147,18 @@ immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/fi
 [Consensus spec: SSZ-snappy encoding strategy](https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md#ssz-snappy-encoding-strategy)
 
 [Google: Snappy, a fast compressor/decompressor.](https://github.com/google/snappy)
+
+### IPFS CID
+
+[Self-describing content-addressed identifiers for distributed systems](https://github.com/multiformats/cid)
+
+### ERC-time-ordered-distributable-database
+
+[A format for useful peer-to-peer databases](https://github.com/perama-v/TODD)
+
+### ERC-generic-attributable-manifest-broadcaster
+
+[A contract for announcing newly published metadata](https://github.com/perama-v/GAMB)
 
 ## Constants
 
@@ -524,91 +549,6 @@ Descriptions of components of the index.
 - Serialization.
 - Compression.
 
-#### String naming conventions
-
-In the case where files are being stored, the following naming conventions are recommended.
-This makes direct file transfer between peers more robust in some situations. The "{}" braces
-are excluded from the file name. Patterns are provided using regular expressions.
-
----
-Directory representing the [index](#addressappearanceindex), where:
-- "NETWORK" is the ASCII-decoded string representation of the
-[network name](#networkName).
-```sh
-Format: address_appearance_index_{NETWORK}
-
-Regular expression: "/^address_appearance_index_+[a-z]$/"
-
-Example directory: ./address_appearance_index_mainnet/
-```
----
-Directory representing a [chapter](#addresschapter), named using the
-[chapter identifier](#chapteridentifier), where:
-
-- "CHAPTER_DESCRIPTOR" is the hexadecimal string representation of the
-[chapter identifier](#chapteridentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
-```sh
-Format: chapter_0x{CHAPTER_DESCRIPTOR}
-
-Regular expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
-
-Example directory: ./chapter_Ox4e/
-```
----
-File representing a [volume](#addressindexvolumechapter), named using the
-[volume identifier](#volumeidentifier), with components:
-
-- "CHAPTER_DESCRIPTOR"
-  - The hexadecimal string representation of the [chapter identifier](#chapteridentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
-- "VOLUME_DESCRIPTOR"
-  - The decimal string representation of the [volume identifier](#volumeidentifier).
-  - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters. Block `14_500_000` is shown in the example.
-- "ENCODING", which may be one of two choices:
-  - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
-  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
-  encoding with [snappy](#snappy). This format is preferred for network transmission.
-
-```sh
-Format: chapter_0x{CHAPTER_DESCRIPTOR}_volume_{VOLUME_DESCRIPTOR}.{ENCODING}
-
-Regular Expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_volume(_[a-z0-9]{3}){3}.ssz(_snappy)?$/"
-
-Example file: ./chapter_0x4e_volume_014_500_000.ssz
-Example file: ./chapter_0x4e_volume_014_500_000.ssz_snappy
-```
----
-File representing a [manifest](#indexmanifest). The file name contains the
-spec version used, which is required to know the definitions of the SSZ types.
-The components of the name are:
-
-- "MAJOR", the [`spec_version_major`](#indexmanifest).
-- "MINOR", the [`spec_version_minor`](#indexmanifest).
-- "PATCH", the [`spec_version_patch`](#indexmanifest).
-
-```sh
-Format: manifest_v_{MAJOR}_{MINOR}_{PATCH}.json
-
-Regular Expression: "/^manifest_v(_[0-9]{2}){3}.json$/"
-
-Example file (spec v0.1.2): ./manifest_v_00_01_02.json
-```
----
-Example of a suggested complete index folder structure:
-```sh
-- ./address_appearance_index_mainnet/
-    - manifest_v_00_01_00.ssz_snappy
-    - ...
-    - /chapter_Ox4e/
-        - ...
-        - /chapter_0x4e_volume_014_500_000.ssz_snappy
-        - /chapter_0x4e_volume_014_600_000.ssz_snappy
-        - ...
-    - /chapter_Ox4f/
-        - ...
-        - /chapter_0x4e_volume_014_500_000.ssz_snappy
-        - ...
-    - ...
-```
 #### Estimated file count
 
 The estimated file count for a complete index on a network at a certain block height can
@@ -637,6 +577,165 @@ The manifest is produced by maintenance [creation](#maintenance-creation) and
 [extension](#maintenance-extension) procedures and utilised during user
 [check completeness](#user-check-completeness). This enables a user to efficiently determine
 the the nature of any pieces of the index that they require from a third party.
+
+
+## Interface identifier string schemas
+
+The following schema outline strings that can be used in interfaces, such as
+RESTful APIs.
+
+### Database interface id
+
+Identifier representing the [index](#addressappearanceindex), where:
+- "NETWORK" is the ASCII-decoded string representation of the
+[network name](#networkName).
+```sh
+Format: address_appearance_index_{NETWORK}
+
+Regular expression: "/^address_appearance_index_+[a-z]$/"
+
+Example identifier: address_appearance_index_mainnet
+```
+
+### Volume interface id
+
+Identifier representing a specific [volume](#addressindexvolumechapter) with components:
+- "VOLUME_DESCRIPTOR"
+  - The decimal string representation of the [volume identifier](#volumeidentifier).
+  - Decimal string is not left-padded with zeros to 9 decimal characters.
+  - The example shows the values: 1_200_000 and 15_200_000
+
+```sh
+Format: {VOLUME_DESCRIPTOR}
+
+Regular Expression: "/^[0-9]{9}$/"
+
+Example identifier: 001200000
+Example identifier: 015200000
+```
+
+### Chapter interface id
+
+Identifier representing a specific [chapter](#addresschapter), with components:
+
+- "CHAPTER_DESCRIPTOR"
+    - The hexadecimal string representation of the
+[chapter identifier](#chapteridentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+    - Left padding with zeros is performed.
+    - The examples show the values 0x0e and 0xf0, with `ADDRESS_CHARS_SIMILARITY_DEPTH=2`.
+
+```sh
+Format: {CHAPTER_DESCRIPTOR}
+
+Regular expression: "/^[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
+
+Example identifiery: 0e
+Example identifiery: f0
+```
+### Example interface
+
+The example below shows an interface supporting two different databases: mainnet and
+sepolia.
+```
+Example definition:
+{database_interface_id}/v1/data/by_volume_and_chapter/{volume_interface_id}/{chapter_interface_id}
+
+Example calls:
+address_appearance_index_mainnet/v1/data/by_volume_and_chapter/015200000/3f
+address_appearance_index_sepolia/v1/data/by_volume_and_chapter/014200000/03
+```
+## File name schemas
+
+In the case where files are being stored, the following naming conventions are recommended.
+This makes direct file transfer between peers more robust in some situations.
+Patterns are provided using regular expressions.
+
+### Database file name
+
+Directory representing the [index](#addressappearanceindex), where:
+- "NETWORK" is the ASCII-decoded string representation of the
+[network name](#networkName).
+```sh
+Format: address_appearance_index_{NETWORK}
+
+Regular expression: "/^address_appearance_index_+[a-z]$/"
+
+Example directory: ./address_appearance_index_mainnet/
+```
+
+### Individual file name
+
+File representing a [chapter](#addresschapter) of a [volume](#addressindexvolumechapter), named using the [chapter identifier](#chapteridentifier) and
+[volume identifier](#volumeidentifier), with components:
+
+- "CHAPTER_DESCRIPTOR"
+  - The hexadecimal string representation of the [chapter identifier](#chapteridentifier), that has `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+- "VOLUME_DESCRIPTOR"
+  - The decimal string representation of the [volume identifier](#volumeidentifier).
+  - Decimal string is left-padded to 9 decimal characters then divided into groups of 3 characters. Block `14_500_000` is shown in the example.
+- "ENCODING", which may be one of two choices:
+  - "ssz" for data encoded with [SSZ](#ssz-spec) serialization.
+  - "ssz_snappy" for data encoded with [SSZ](#ssz-spec) serialization followed by
+  encoding with [snappy](#snappy). This format is preferred for network transmission.
+
+```sh
+Format: chapter_0x{CHAPTER_DESCRIPTOR}_volume_{VOLUME_DESCRIPTOR}.{ENCODING}
+
+Regular Expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}_volume(_[0-9]{3}){3}.ssz(_snappy)?$/"
+
+Example file: ./chapter_0x4e_volume_014_500_000.ssz
+Example file: ./chapter_0x4e_volume_014_500_000.ssz_snappy
+```
+
+### Chapter directory name
+
+Directory representing a [chapter](#addresschapter), named using the
+[chapter identifier](#chapteridentifier), where:
+
+- "CHAPTER_DESCRIPTOR" is the hexadecimal string representation of the
+[chapter identifier](#chapteridentifier) with `ADDRESS_CHARS_SIMILARITY_DEPTH` characters.
+```sh
+Format: chapter_0x{CHAPTER_DESCRIPTOR}
+
+Regular expression: "/^chapter_0x[a-z0-9]{ADDRESS_CHARS_SIMILARITY_DEPTH}$/"
+
+Example directory: ./chapter_Ox4e/
+```
+
+### Manifest file name
+
+File representing a [manifest](#indexmanifest). The file name contains the
+spec version used, which is required to know the definitions of the SSZ types.
+The components of the name are:
+
+- "MAJOR", the [`spec_version_major`](#indexmanifest).
+- "MINOR", the [`spec_version_minor`](#indexmanifest).
+- "PATCH", the [`spec_version_patch`](#indexmanifest).
+
+```sh
+Format: manifest_v_{MAJOR}_{MINOR}_{PATCH}.json
+
+Regular Expression: "/^manifest_v(_[0-9]{2}){3}.json$/"
+
+Example file (spec v0.1.2): ./manifest_v_00_01_02.json
+```
+---
+Example of a suggested complete index folder structure:
+```sh
+- ./address_appearance_index_mainnet
+    - manifest_v_00_01_00.json
+    - ...
+    - /chapter_Ox4e
+        - ...
+        - chapter_0x4e_volume_014_500_000.ssz_snappy
+        - chapter_0x4e_volume_014_600_000.ssz_snappy
+        - ...
+    - /chapter_Ox4f
+        - ...
+        - chapter_0x4e_volume_014_500_000.ssz_snappy
+        - ...
+    - ...
+```
 
 ## Procedures
 
