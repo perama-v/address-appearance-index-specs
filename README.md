@@ -11,20 +11,7 @@ Table of contents
 <!-- START doctoc -->
 - [address-appearance-index-specs](#address-appearance-index-specs)
   - [Introduction](#introduction)
-  - [Scope](#scope)
   - [Notation](#notation)
-  - [References](#references)
-    - [Ethereum](#ethereum)
-    - [Ethereum consensus specification](#ethereum-consensus-specification)
-    - [EIP-4444](#eip-4444)
-    - [Portal Network](#portal-network)
-    - [trueblocks-core](#trueblocks-core)
-    - [Unchained Index](#unchained-index)
-    - [SSZ Spec](#ssz-spec)
-    - [Snappy](#snappy)
-    - [IPFS CID](#ipfs-cid)
-    - [ERC-time-ordered-distributable-database](#erc-time-ordered-distributable-database)
-    - [ERC-generic-attributable-manifest-broadcaster](#erc-generic-attributable-manifest-broadcaster)
   - [Constants](#constants)
     - [Design parameters](#design-parameters)
     - [Fixed-size type parameters](#fixed-size-type-parameters)
@@ -55,7 +42,6 @@ Table of contents
       - [Agent type: User](#agent-type-user)
     - [Service assumed from the data layer](#service-assumed-from-the-data-layer)
     - [Service assumed from the network layer](#service-assumed-from-the-network-layer)
-    - [Functions of the index](#functions-of-the-index)
   - [Index architecture](#index-architecture)
       - [Estimated file count](#estimated-file-count)
     - [Manifest architecture description](#manifest-architecture-description)
@@ -76,7 +62,18 @@ Table of contents
     - [User: Find transactions](#user-find-transactions)
     - [User: Check completeness](#user-check-completeness)
   - [Design principles](#design-principles)
-
+  - [References](#references)
+    - [Ethereum](#ethereum)
+    - [Ethereum consensus specification](#ethereum-consensus-specification)
+    - [EIP-4444](#eip-4444)
+    - [Portal Network](#portal-network)
+    - [trueblocks-core](#trueblocks-core)
+    - [Unchained Index](#unchained-index)
+    - [SSZ Spec](#ssz-spec)
+    - [Snappy](#snappy)
+    - [IPFS CID](#ipfs-cid)
+    - [ERC-time-ordered-distributable-database](#erc-time-ordered-distributable-database)
+    - [ERC-generic-attributable-manifest-broadcaster](#erc-generic-attributable-manifest-broadcaster)
 <!-- END doctoc -->
 
 ## Introduction
@@ -127,55 +124,6 @@ Ethereum [consensus](#ethereum-consensus-specification),
 [ssz](#ssz-spec) and [portal network](#portal-network) specifications. Part of this
 rationale is that SSZ serialization is used in this index to benefit from ecosystem tooling.
 No doctesting is applied and functions are not likely to be executable.
-
-## References
-
-### Ethereum
-
-[A secure decentralised transaction ledger](https://ethereum.github.io/yellowpaper/paper.pdf)
-
-### Ethereum consensus specification
-
-[Ethereum proof-of-stake specifications](https://github.com/ethereum/consensus-specs)
-
-### EIP-4444
-
-[Bound Historical Data in Execution Clients](https://eips.ethereum.org/EIPS/eip-4444)
-
-### Portal Network
-
-[Lightweight protocol access by resource constrained devices](https://github.com/ethereum/portal-network-specs/blob/master/README.md)
-
-### trueblocks-core
-
-[TrueBlocks creates an index that lets you access the entire Ethereum chain directly from your local machine.](https://github.com/TrueBlocks/trueblocks-core)
-
-### Unchained Index
-
-[The Unchained Index is a naturally-sharded, easily-shared, reproducible, and minimally-sized
-immutable index for EVM-based blockchains.](https://trueblocks.io/papers/2022/file-format-spec-v0.40.0-beta.pdf)
-
-### SSZ Spec
-
-[Simple Serialize (SSZ) is a standard for the encoding and merkleization of structured data](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
-
-### Snappy
-
-[Consensus spec: SSZ-snappy encoding strategy](https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md#ssz-snappy-encoding-strategy)
-
-[Google: Snappy, a fast compressor/decompressor.](https://github.com/google/snappy)
-
-### IPFS CID
-
-[Self-describing content-addressed identifiers for distributed systems](https://github.com/multiformats/cid)
-
-### ERC-time-ordered-distributable-database
-
-[A format for useful peer-to-peer databases](https://github.com/perama-v/TODD)
-
-### ERC-generic-attributable-manifest-broadcaster
-
-[A contract for announcing newly published metadata](https://github.com/perama-v/GAMB)
 
 ## Constants
 
@@ -828,3 +776,76 @@ Resilient: The index can be reconstructed if lost.
 
 Multiclient: The index can be used by different projects, wherever information about a particular
 address is required (such as wallets and light-style clients).
+
+## References
+
+### Ethereum
+
+A secure decentralised transaction ledger.
+
+https://ethereum.github.io/yellowpaper/paper.pdf
+
+### Ethereum consensus specification
+
+Ethereum proof-of-stake specifications
+
+https://github.com/ethereum/consensus-specs
+
+### EIP-4444
+
+Bound Historical Data in Execution Clients
+
+https://eips.ethereum.org/EIPS/eip-4444
+
+### Portal Network
+
+Lightweight protocol access by resource constrained devices
+
+https://github.com/ethereum/portal-network-specs/blob/master/README.md
+
+### trueblocks-core
+
+TrueBlocks creates an index that lets you access the entire Ethereum chain directly from your local machine.
+
+https://github.com/TrueBlocks/trueblocks-core
+
+### Unchained Index
+
+The Unchained Index is a naturally-sharded, easily-shared, reproducible, and minimally-sized
+immutable index for EVM-based blockchains.
+
+https://trueblocks.io/papers/2022/file-format-spec-v0.40.0-beta.pdf
+
+### SSZ Spec
+
+Simple Serialize (SSZ) is a standard for the encoding and merkleization of structured data
+
+https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md
+
+### Snappy
+
+Consensus spec: SSZ-snappy encoding strategy
+
+https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/p2p-interface.md#ssz-snappy-encoding-strategy
+
+Google: Snappy, a fast compressor/decompressor.
+
+https://github.com/google/snappy
+
+### IPFS CID
+
+Self-describing content-addressed identifiers for distributed systems
+
+https://github.com/multiformats/cid
+
+### ERC-time-ordered-distributable-database
+
+A format for useful peer-to-peer databases
+
+https://github.com/perama-v/TODD
+
+### ERC-generic-attributable-manifest-broadcaster
+
+A contract for announcing newly published metadata
+
+https://github.com/perama-v/GAMB
