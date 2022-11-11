@@ -206,7 +206,7 @@ Helper values for SSZ operations. SSZ variable-size elements require a maximum l
 | `MAX_ADDRESSES_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of addresses plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
 | `MAX_TXS_PER_VOLUME` | `uint32(2*30)` (=1_073_741_824) | Chosen as practical ceiling for number of transactions plausible in `BLOCKS_PER_VOLUME` blocks. Not rigorous. |
 | `MAX_VOLUMES` | `uint32(2**16)` (=65_536) | Chosen as practical ceiling for number of volumes if volumes containing `BLOCKS_PER_VOLUME`. |
-| `MAX_BYTES_PER_CID` |  `uint32(2**5)` (=32) | Number of bytes an IPFS CIDv0 uses. |
+| `MAX_BYTES_PER_CID` |  `uint32(2**5)` (=46) | Number of bytes an IPFS CIDv0 uses. |
 
 ### Derived
 
@@ -583,6 +583,7 @@ def estimate_file_count(block_height):
 print(estimate_file_count(15_400_000))
 > 39424
 ```
+
 ### Manifest architecture description
 
 The manifest is a file that serves as a reference for users to maintain up to date data.
@@ -608,6 +609,8 @@ what the most recent data is included in the manifest.
 - The [chapter_metadata](#manifestchapter) is a comprehensive collection of links
 to all individual parts of the data.
 
+If the manifest uses <150bytes for each [`VolumeChapter`](#addressindexvolumechapter),
+the manifest file will be <6MB for mainnet ([estimated file count](#estimated-file-count)).
 
 ## Interface identifier string schemas
 
